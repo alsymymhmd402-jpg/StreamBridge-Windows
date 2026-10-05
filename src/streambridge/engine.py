@@ -13,7 +13,7 @@ import pyvirtualcam
 from imageio_ffmpeg import get_ffmpeg_exe
 
 from .audio import AudioRelay
-from .core import apply_visual_adjustments, build_ffmpeg_command, make_signal_lost_frame, read_exact
+from .core import apply_pk_overlay, apply_visual_adjustments, build_ffmpeg_command, make_signal_lost_frame, read_exact
 
 WIDTH = 1280
 HEIGHT = 720
@@ -30,6 +30,10 @@ DEFAULT_SETTINGS = {
     "audio_device": None,
     "audio_pitch": 1.0,
     "audio_volume": 0.8,
+    "pk_overlay_enabled": False,
+    "pk_left_score": 0,
+    "pk_right_score": 0,
+    "pk_round_name": "PK ROUND",
 }
 RECONNECT_MIN_SECONDS = 1.0
 RECONNECT_MAX_SECONDS = 15.0
@@ -313,6 +317,13 @@ class StreamBridgeEngine(threading.Thread):
                             )
                         else:
                             output = raw_frame
+                        if settings.get("pk_overlay_enabled", False):
+                            output = apply_pk_overlay(
+                                output,
+                                left_score=int(settings.get("pk_left_score", 0)),
+                                right_score=int(settings.get("pk_right_score", 0)),
+                                round_name=str(settings.get("pk_round_name", "PK ROUND")),
+                            )
                     else:
                         phase = int(now) % 4
                         if phase != last_placeholder_phase:

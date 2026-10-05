@@ -6,12 +6,14 @@ import numpy as np
 from streambridge.core import (
     InvalidStreamUrl,
     apply_visual_adjustments,
+    apply_pk_overlay,
     build_audio_ffmpeg_command,
     build_ffmpeg_command,
     make_signal_lost_frame,
     read_exact,
     validate_stream_url,
 )
+from streambridge.resolver import classify_input_url, normalize_input_url, resolve_stream_url
 
 
 class StreamCoreTests(unittest.TestCase):
@@ -82,6 +84,25 @@ class StreamCoreTests(unittest.TestCase):
         self.assertEqual(frame.shape, (180, 320, 3))
         self.assertEqual(frame.dtype, np.uint8)
         self.assertTrue(frame.flags["C_CONTIGUOUS"])
+
+    def test_normalizes_bare_share_links_and_classifies_tiktok(self):
+        value = normalize_input_url("www.tiktok.com/@creator/live")
+        self.assertEqual(value, "https://www.tiktok.com/@creator/live")
+        self.assertEqual(classify_input_url(value), "share_page")
+        self.assertEqual(classify_input_url("https://cdn.example/live.m3u8"), "direct")
+
+    def test_direct_resolver_is_deterministic_and_does_not_call_extractor(self):
+        result = resolve_stream_url("www.example/live.m3u8")
+        self.assertEqual(result.media_url, "https://www.example/live.m3u8")
+        self.assertEqual(result.source_kind, "direct")
+
+    def test_pk_overlay_changes_only_frame_pixels_and_preserves_shape(self):
+        frame = np.zeros((120, 320, 3), dtype=np.uint8)
+        overlay = apply_pk_overlay(frame, left_score=3, right_score=7, round_name="ROUND 1")
+        self.assertEqual(overlay.shape, frame.shape)
+        self.assertEqual(overlay.dtype, frame.dtype)
+        self.assertGreater(int(overlay[:20].mean()), 0)
+        self.assertEqual(int(overlay[100:].mean()), 0)
 
 
 if __name__ == "__main__":

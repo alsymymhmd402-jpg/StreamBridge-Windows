@@ -135,6 +135,29 @@ def apply_visual_adjustments(
     return np.ascontiguousarray(output)
 
 
+def apply_pk_overlay(
+    frame: np.ndarray,
+    *,
+    left_score: int = 0,
+    right_score: int = 0,
+    round_name: str = "PK ROUND",
+) -> np.ndarray:
+    """Composite a compact score bar in the top safe area; never renders chat or gifts."""
+    output = np.ascontiguousarray(frame.copy())
+    height, width = output.shape[:2]
+    bar_h = max(34, min(72, height // 9))
+    overlay = output[:bar_h].copy()
+    cv2.rectangle(overlay, (0, 0), (width, bar_h), (12, 18, 31), -1)
+    cv2.addWeighted(overlay, 0.92, output[:bar_h], 0.08, 0, output[:bar_h])
+    center = width // 2
+    cv2.line(output, (center, 6), (center, bar_h - 6), (37, 225, 230), 2)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    cv2.putText(output, f"{int(left_score)}", (max(12, center - width // 4), bar_h - 18), font, 0.8, (255, 255, 255), 2, cv2.LINE_AA)
+    cv2.putText(output, f"{int(right_score)}", (center + width // 8, bar_h - 18), font, 0.8, (255, 255, 255), 2, cv2.LINE_AA)
+    cv2.putText(output, str(round_name)[:24], (12, max(18, bar_h // 3)), font, 0.42, (41, 225, 230), 1, cv2.LINE_AA)
+    return output
+
+
 def read_exact(stream, byte_count: int) -> bytes | None:
     """Read exactly byte_count bytes, supporting partial pipe reads; return None at EOF."""
     buf = bytearray()

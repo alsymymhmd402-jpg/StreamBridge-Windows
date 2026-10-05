@@ -1,53 +1,37 @@
-# StreamBridge Windows v1.1.0
+# StreamBridge Windows v1.2.0
 
-A Windows desktop application that decodes a **direct** RTSP/RTSPS, HLS/M3U8, HTTP, or HTTPS stream and sends video frames to a UnityCapture DirectShow virtual camera. The interface uses a dark neon cyan/red visual style with a left sidebar.
+A Windows desktop application that resolves supported public share links or accepts direct RTSP/RTSPS, HLS/M3U8, HTTP, or HTTPS streams, then sends processed video to a UnityCapture DirectShow virtual camera.
 
-> Share pages (for example, TikTok/YouTube pages) are not resolved by v1.1.0. A complete `https://` share URL may pass the syntax check but still fail to decode; use a direct playable media endpoint or resolve the page to a media URL first.
+## What's new in v1.2.0
 
-## What's new in v1.1.0
+- **Share-link resolver:** bare `www.tiktok.com/...`, `tiktok.com/...`, and `https://vt.tiktok.com/...` inputs are normalized to HTTPS. TikTok share/live pages are resolved through the optional `yt-dlp` extractor, while direct media URLs remain the fast path.
+- **Actionable resolver diagnostics:** the app distinguishes input normalization, share-page extraction failure, and later FFmpeg/network failure. Query strings are redacted in logs.
+- **UnityCapture preflight:** the Home page can enumerate the configured UnityCapture backend without opening or modifying a camera. If no camera is registered, the app explains the fix and offers to open the official UnityCapture instructions. Driver installation remains an explicit Windows/UAC action; it is never silent.
+- **Media FX stability:** brightness, contrast, hue, playback speed, pitch, and volume continue to apply through the existing debounced live-update path. Speed/pitch changes reconfigure only the relevant decoder/relay; the camera sender continues outputting frames or the reconnect placeholder.
+- **PK overlay preparation:** an opt-in top-edge score bar can be composited into outgoing frames using score/round settings. It does not render comments or gifts and is disabled by default.
 
-- Sidebar navigation for **Home**, **Live Preview**, **Bridge Status**, **Logs & Diagnostics**, **Media FX**, and **Settings**, using the dark cyan/red theme carried over from the mobile UI.
-- Reliable paste controls: a **Paste** button, `Ctrl+V`, `Shift+Insert`, and a right-click menu on the URL field.
-- Brightness, contrast, and hue sliders process frames before they are sent to the virtual camera.
-- Optional 0.98×–1.03× playback-speed control, implemented in the FFmpeg video filter chain.
-- Optional audio decode and routing with subtle pitch/tempo and volume controls. Audio is sent to a **separate virtual audio device**; the video camera device does not carry audio.
-- Hiding/disabling the local preview does not stop decoding or virtual-camera frame delivery.
-- A branded “SIGNAL LOST / RECONNECTING” frame is sent to the virtual camera during an input outage.
+## Requirements and one-time setup
 
-## Requirements and one-time driver setup
-
-1. Install the **UnityCapture DirectShow filter** from the [official UnityCapture repository](https://github.com/schellingb/UnityCapture). Follow its official installation instructions (the driver is not bundled with this app). After installation, the expected camera name is usually `Unity Video Capture`.
-2. For audio pass-through, install a virtual audio cable such as [VB-Audio Virtual Cable](https://vb-audio.com/Cable/). This is optional. In StreamBridge choose the cable's **CABLE Input** playback endpoint; in TikTok LIVE Studio/OBS choose **CABLE Output** as the microphone/audio input.
-3. Use a **direct stream URL**. Examples include `https://host.example/live.m3u8` or `rtsp://camera.example/live`. A share page may pass HTTP(S) syntax validation but v1.1.0 does not extract its underlying stream, so FFmpeg may fail to decode it.
+1. Install the **UnityCapture DirectShow filter** from the [official UnityCapture repository](https://github.com/schellingb/UnityCapture), then confirm that the expected camera name is usually `Unity Video Capture`.
+2. For optional audio pass-through, install a virtual audio cable such as [VB-Audio Virtual Cable](https://vb-audio.com/Cable/).
+3. Install runtime dependencies from `requirements.txt`; `yt-dlp` is required only when using TikTok share pages. The resolver does not bypass authentication, cookies, geo restrictions, or other access controls.
 
 ## Use
 
-1. Start `StreamBridge.exe`.
-2. On Home, paste the stream endpoint into **DIRECT STREAM URL**. Use the Paste button, `Ctrl+V`, or right-click → Paste.
-3. Optionally choose output resolution/FPS and the audio device in **Settings**. Resolution/FPS changes apply on the next bridge start.
-4. In **Media FX**, enable only the controls you need. Brightness/contrast/hue are live. Speed/pitch changes reinitialize the FFmpeg decoder; the camera sender continues running and emits the reconnect placeholder while it reconnects.
-5. Select **START STREAM BRIDGE**. The **Bridge Status** and **Logs & Diagnostics** pages show camera, source, FPS, and audio status. Open **Live Preview** to view frames.
-6. Turning **Enable UI Preview** off only stops local preview-frame delivery to the GUI. It does not stop the virtual-camera output thread.
-7. In TikTok LIVE Studio or OBS, select **Unity Video Capture** (or the device name configured in Settings) as the camera. If routing audio, select the virtual cable's **CABLE Output** as the microphone.
+1. Start `StreamBridge.exe` and press **Check UnityCapture / Setup** if the camera is not registered.
+2. Paste a direct endpoint or a supported TikTok share/live URL. The app normalizes missing `https://` where unambiguous and resolves share pages in a background thread.
+3. Start the bridge and select **Unity Video Capture** in TikTok LIVE Studio/OBS.
+4. Use **Media FX** for live visual/audio adjustments. Preview visibility is independent of camera delivery.
 
-## Build the Windows EXE from source
+## Build and tests
 
-Use Windows 10/11 x64 with Python 3.11 x64 installed **with Tcl/Tk**. From PowerShell in this project folder:
+Use Windows 10/11 x64 with Python 3.11 x64 and Tcl/Tk:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
 .\build_windows.ps1 -Mode onefile
 ```
 
-The script creates a virtual environment, installs `requirements-dev.txt` (including FFmpeg, OpenCV, and sounddevice dependencies), imports the GUI, runs the unit tests, and creates `dist\StreamBridge.exe`. Use `-Mode onedir` for a folder-based build.
+The build runs the unit suite and creates `dist\StreamBridge.exe`. The GitHub Actions workflow uploads the EXE as a short-retention artifact; binaries are not committed to Git.
 
-## Tests and limitations
-
-- Unit tests cover URL validation, FFmpeg filter construction, PCM audio output command construction, image adjustments, signal-loss frames, preview-independent frame delivery, and live speed-change reconfiguration.
-- The CI build runs on a Windows x64 runner. Actual UnityCapture device availability, VB-CABLE routing, source-server codec support, and the final camera/microphone selection must still be confirmed on the target Windows PC.
-- FFmpeg opens independent decode sessions for video and optional audio, so enabling audio may add network load. Some sources do not expose an audio track or may require authentication/headers unavailable to the app.
-- The app requires the third-party UnityCapture driver for video and a separately installed virtual audio driver for audio routing; it does not install drivers or bypass source access controls.
-
-## Technical references
-
-See [technical references](docs/TECHNICAL_REFERENCES.md) and [third-party notices](THIRD_PARTY.md). Main upstream references: [pyvirtualcam](https://github.com/letmaik/pyvirtualcam), [UnityCapture](https://github.com/schellingb/UnityCapture), [FFmpeg filters](https://ffmpeg.org/ffmpeg-filters.html), [OpenCV image transforms](https://docs.opencv.org/4.13.0/d3/dc1/tutorial_basic_linear_transform.html), and [sounddevice raw streams](https://python-sounddevice.readthedocs.io/en/latest/api/raw-streams.html).
+The tests cover direct/share URL classification, deterministic direct resolution, FFmpeg command construction, visual/audio processing, PK top-only composition, camera-output independence, and decoder reconfiguration. Real TikTok availability, UnityCapture registration, VB-CABLE routing, and Windows hardware behavior still require validation on an authorized target PC.

@@ -2,15 +2,19 @@
 from __future__ import annotations
 
 import queue
+import threading
 import tkinter as tk
 from tkinter import messagebox, ttk
+import webbrowser
 
 import numpy as np
 from PIL import Image, ImageTk
 
 from .audio import list_output_devices
+from .camera_check import UNITYCAPTURE_URL, check_unitycapture
 from .core import InvalidStreamUrl, validate_stream_url
 from .engine import DEFAULT_SETTINGS, StreamBridgeEngine
+from .resolver import normalize_input_url, resolve_stream_url
 
 BG = "#080B12"
 SIDEBAR = "#0C111B"
@@ -38,7 +42,7 @@ NAV_ITEMS = [
 class StreamBridgeApp(tk.Tk):
     def __init__(self, initial_url: str = "") -> None:
         super().__init__()
-        self.title("StreamBridge 1.1.0 — Virtual Camera")
+        self.title("StreamBridge 1.2.0 — Virtual Camera")
         self.geometry("1240x820")
         self.minsize(1020, 700)
         self.configure(bg=BG)
@@ -63,6 +67,7 @@ class StreamBridgeApp(tk.Tk):
         self._last_display_frame: np.ndarray | None = None
         self._closing = False
         self._last_error = False
+        self._resolving = False
         self._current_page = "home"
         self._adjustment_after: str | None = None
         self._last_metrics = {"fps": 0.0, "frames": 0, "signal": "WAITING", "resolution": "1280×720", "target_fps": 30}
@@ -126,7 +131,7 @@ class StreamBridgeApp(tk.Tk):
         brand = tk.Frame(logo, bg=SIDEBAR)
         brand.pack(side="left", padx=(10, 0))
         tk.Label(brand, text="STREAM", bg=SIDEBAR, fg=TEXT, font=("Segoe UI", 13, "bold")).pack(anchor="w")
-        tk.Label(brand, text="BRIDGE  1.1.0", bg=SIDEBAR, fg=CYAN, font=("Segoe UI", 8, "bold")).pack(anchor="w")
+        tk.Label(brand, text="BRIDGE  1.2.0", bg=SIDEBAR, fg=CYAN, font=("Segoe UI", 8, "bold")).pack(anchor="w")
         tk.Label(side, text="WORKSPACE", bg=SIDEBAR, fg="#59687D", font=("Segoe UI", 8, "bold"),
                  anchor="w").pack(fill="x", padx=22, pady=(0, 8))
         self.nav_buttons: dict[str, tk.Button] = {}
@@ -207,6 +212,14 @@ class StreamBridgeApp(tk.Tk):
         self.home_status_text = tk.Label(url_card, text="Ready · Install UnityCapture once to register the camera",
                                          bg=PANEL, fg=MUTED, font=("Segoe UI", 9), anchor="w")
         self.home_status_text.pack(fill="x", padx=18, pady=(0, 14))
+        setup = tk.Frame(url_card, bg=PANEL)
+        setup.pack(fill="x", padx=18, pady=(0, 14))
+        tk.Button(setup, text="Check UnityCapture / Setup", command=self._check_camera_setup,
+                  bg="#193040", fg=CYAN, activebackground="#254458", activeforeground=TEXT,
+                  relief="flat", bd=0, font=("Segoe UI", 9, "bold"), padx=12, pady=7,
+                  cursor="hand2").pack(side="left")
+        tk.Label(setup, text="Share links use the optional yt-dlp resolver.", bg=PANEL, fg=MUTED,
+                 font=("Segoe UI", 8)).pack(side="left", padx=10)
 
         tk.Label(page, text="LIVE DIAGNOSTICS", bg=BG, fg=MUTED, font=("Segoe UI", 9, "bold"), anchor="w").pack(fill="x", pady=(2, 9))
         cards = tk.Frame(page, bg=BG)
@@ -553,11 +566,48 @@ class StreamBridgeApp(tk.Tk):
             self.start_button.configure(state="disabled", text="STOPPING…", bg="#334155", fg=TEXT)
             self.worker.request_stop()
             return
+        if self._resolving:
+            return
+        raw = self.url_var.get()
         try:
-            url = validate_stream_url(self.url_var.get())
+            normalized = normalize_input_url(raw)
         except InvalidStreamUrl as exc:
-            messagebox.showerror("Invalid direct stream URL", str(exc), parent=self)
+            messagebox.showerror("Invalid stream URL", str(exc), parent=self)
             self.url_entry.focus_set()
+            return
+        camera_name = self.camera_name_var.get().strip() or DEFAULT_SETTINGS["camera_device"]
+        preflight = check_unitycapture(camera_name)
+        if not preflight.available:
+            self._set_status("UnityCapture camera is unavailable · install/register it first", RED)
+            self._append_log("CAMERA", preflight.message)
+            messagebox.showerror("UnityCapture camera unavailable", f"{preflight.message}\n\nUse 'Check UnityCapture / Setup' to open the official instructions.", parent=self)
+            return
+        self._resolving = True
+        self.start_button.configure(state="disabled", text="RESOLVING URL…", bg="#334155", fg=TEXT)
+        self._set_status("Resolving stream URL…", YELLOW)
+        threading.Thread(target=self._resolve_in_background, args=(normalized,), daemon=True).start()
+
+    def _resolve_in_background(self, value: str) -> None:
+        try:
+            result = resolve_stream_url(value)
+        except Exception as exc:
+            self.after(0, lambda: self._finish_resolution_error(str(exc)))
+            return
+        self.after(0, lambda: self._start_resolved_stream(result.media_url, result.source_kind))
+
+    def _finish_resolution_error(self, message: str) -> None:
+        self._resolving = False
+        self.start_button.configure(state="normal", text="START STREAM BRIDGE", bg=PINK, fg="white")
+        self._set_status("URL resolution failed", RED)
+        self._append_log("RESOLVER", message)
+        messagebox.showerror("Stream URL resolution failed", message, parent=self)
+
+    def _start_resolved_stream(self, url: str, source_kind: str) -> None:
+        self._resolving = False
+        try:
+            url = validate_stream_url(url)
+        except InvalidStreamUrl as exc:
+            self._finish_resolution_error(str(exc))
             return
         settings = self._build_engine_settings()
         if settings["audio_enabled"] and settings["audio_device"] is None:
@@ -569,7 +619,18 @@ class StreamBridgeApp(tk.Tk):
         self._set_status("Starting virtual camera…", YELLOW)
         self._last_metrics = {"fps": 0.0, "frames": 0, "signal": "CONNECTING", "resolution": f"{settings['width']}×{settings['height']}", "target_fps": settings["fps"]}
         self._append_log("APP", f"Starting bridge for {self._redact_url(url)}")
+        self._append_log("RESOLVER", "Direct endpoint accepted" if source_kind == "direct" else "Share page resolved to a media endpoint")
         self.worker.start()
+
+    def _check_camera_setup(self) -> None:
+        name = self.camera_name_var.get().strip() or DEFAULT_SETTINGS["camera_device"]
+        result = check_unitycapture(name)
+        if result.available:
+            messagebox.showinfo("UnityCapture ready", result.message, parent=self)
+            self._set_status(result.message, GREEN)
+            return
+        if messagebox.askyesno("UnityCapture setup required", f"{result.message}\n\nOpen the official UnityCapture instructions now?", parent=self):
+            webbrowser.open(UNITYCAPTURE_URL)
 
     @staticmethod
     def _redact_url(url: str) -> str:

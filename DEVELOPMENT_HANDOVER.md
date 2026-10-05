@@ -211,3 +211,13 @@ Continue from the active issues in DEVELOPMENT_HANDOVER.md, in this order:
 
 Before editing, inspect the current code and preserve the decoupled decoder/camera/audio threads. Add automated tests, run the Windows Actions workflow, and distinguish unit/CI results from real Windows hardware validation. Update DEVELOPMENT_HANDOVER.md and README.md with every behavior change. Do not commit secrets, cookies, signed stream URLs, user credentials, or EXE artifacts.
 ```
+
+## 12. v1.2.0 implementation addendum (2026-10-06)
+
+The continuation work adds a resolver in `src/streambridge/resolver.py` for HTTPS normalization, TikTok share-page classification, direct URL fast path, and optional yt-dlp extraction with timeout/error reporting. It does not bypass authentication or access controls, and the UI resolves in a background thread before starting FFmpeg.
+
+`src/streambridge/camera_check.py` adds a UnityCapture preflight using the available pyvirtualcam API. It performs a short no-frame probe when enumeration is unavailable, reports missing or mismatched devices, and opens the official UnityCapture repository only after an explicit user click; it does not install/register a driver silently.
+
+`apply_pk_overlay()` and engine settings provide a disabled-by-default, top-edge-only score bar. Comments and gifts are not accepted as inputs or rendered. Additional unit coverage verifies URL normalization/classification, deterministic direct resolution, and top-only PK composition.
+
+The v1.2.0 CI artifact remains a Windows build and must be validated on a real authorized Windows machine with UnityCapture installed, TikTok LIVE Studio/OBS device enumeration, and representative public links. A successful unit test or CI build is not proof of hardware-driver interoperability or current TikTok availability.
