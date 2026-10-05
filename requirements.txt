@@ -1,0 +1,7 @@
+# Runtime dependencies (Windows x64)
+imageio-ffmpeg>=0.5.1,<1
+numpy>=1.26,<3
+Pillow>=10,<13
+pyvirtualcam>=0.15.0,<0.16
+opencv-python-headless>=4.10,<5
+sounddevice>=0.5,<1

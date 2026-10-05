@@ -1,0 +1,18 @@
+[project]
+name = "streambridge-windows"
+version = "1.1.0"
+description = "Direct stream to a UnityCapture DirectShow virtual camera with live media adjustments"
+requires-python = ">=3.11,<3.13"
+license = { text = "GPL-2.0-only" }
+dependencies = [
+  "imageio-ffmpeg>=0.5.1,<1",
+  "numpy>=1.26,<3",
+  "Pillow>=10,<13",
+  "pyvirtualcam>=0.15.0,<0.16",
+  "opencv-python-headless>=4.10,<5",
+  "sounddevice>=0.5,<1",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

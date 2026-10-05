@@ -1,0 +1,33 @@
+name: Build StreamBridge v1.1.0 for Windows
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-exe:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: 'x64'
+
+      - name: Build and test Windows executable
+        shell: pwsh
+        run: .\build_windows.ps1 -Mode onefile
+
+      - name: Upload StreamBridge v1.1.0 EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: StreamBridge-v1.1.0-Windows-x64
+          path: dist/StreamBridge.exe
+          if-no-files-found: error
+          retention-days: 14
