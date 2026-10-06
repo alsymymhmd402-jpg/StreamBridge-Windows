@@ -237,3 +237,9 @@ Camera preflight and share-link resolution run in background threads so a missin
 ## 15. v1.5.0 multi-page Arabic UI addendum (2026-10-06)
 
 The previous unified dashboard was replaced with explicit visible pages: Home, Live Preview and FX, Camera Status, Logs and Diagnostics, and General Settings. Home is limited to source entry, extraction, and connection state. The preview page alone combines the portrait 9:16 phone view with FX controls and keeps start/stop/camera status outside the video frame. Camera checks and share extraction remain asynchronous.
+
+## 16. v1.5.1 async and live-link diagnostic addendum (2026-10-06)
+
+Share extraction now runs before the UnityCapture preflight in the same background preparation thread, with a visible indeterminate loading indicator. This ensures a missing or slow camera probe cannot prevent link extraction or block Tkinter. FFmpeg stderr and non-zero process termination are surfaced as diagnostic status events instead of being silently retried.
+
+The supplied TikTok share URL resolved successfully in 3.1–3.5 seconds during sandbox testing. The sandbox FFmpeg process could not decode the returned HLS endpoint reliably (one run exited with signal 11 and ffprobe timed out), so end-to-end preview success is not claimed without a real Windows/UnityCapture validation. The unit suite remains 15 passing tests.

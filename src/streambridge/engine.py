@@ -122,7 +122,7 @@ class FFmpegDecoder(threading.Thread):
                 kwargs = {
                     "stdin": subprocess.DEVNULL,
                     "stdout": subprocess.PIPE,
-                    "stderr": subprocess.DEVNULL,
+                    "stderr": subprocess.PIPE,
                     "bufsize": 0,
                 }
                 if os.name == "nt":
@@ -151,6 +151,15 @@ class FFmpegDecoder(threading.Thread):
                     proc.wait(timeout=1.0)
                 except subprocess.TimeoutExpired:
                     proc.kill()
+                if proc.returncode not in (0, None) and not self.stop_event.is_set():
+                    detail = ""
+                    if proc.stderr:
+                        try:
+                            detail = proc.stderr.read(600).decode(errors="replace").strip()
+                        except (OSError, UnicodeError):
+                            detail = ""
+                    suffix = f": {detail[:240]}" if detail else ""
+                    self.events.put(("status", f"FFmpeg توقف برمز {proc.returncode}{suffix}"))
             except Exception as exc:
                 self.events.put(("status", f"Stream open failed ({type(exc).__name__}); retrying"))
                 if proc and proc.poll() is None:
@@ -165,6 +174,11 @@ class FFmpegDecoder(threading.Thread):
                 if proc and proc.stdout:
                     try:
                         proc.stdout.close()
+                    except OSError:
+                        pass
+                if proc and proc.stderr:
+                    try:
+                        proc.stderr.close()
                     except OSError:
                         pass
 

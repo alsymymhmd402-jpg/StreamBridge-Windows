@@ -23,7 +23,7 @@ BG="#080B12"; SIDEBAR="#0C111B"; PANEL="#111927"; TEXT="#F4F7FB"; MUTED="#91A0B5
 class StreamBridgeApp(tk.Tk):
     def __init__(self, initial_url: str = "") -> None:
         super().__init__()
-        self.title("StreamBridge 1.5.0 — كاميرا بث افتراضية")
+        self.title("StreamBridge 1.5.1 — كاميرا بث افتراضية")
         try: self.iconbitmap(str(Path(__file__).resolve().parent / "assets" / "streambridge.ico"))
         except tk.TclError: pass
         self.geometry("1440x900"); self.minsize(1180,760); self.configure(bg=BG)
@@ -51,6 +51,7 @@ class StreamBridgeApp(tk.Tk):
         tk.Label(header,text="STREAMBRIDGE · لوحة البث",bg=BG,fg=TEXT,font=("Segoe UI",20,"bold"),anchor="e").grid(row=0,column=0,sticky="e")
         tk.Label(header,text="واجهة عربية RTL · كاميرا Windows افتراضية",bg=BG,fg=MUTED,font=("Segoe UI",10),anchor="e").grid(row=1,column=0,sticky="e",pady=(3,0))
         self.status_chip=tk.Label(header,text="الحالة  متوقف",bg="#172233",fg=MUTED,font=("Segoe UI",9,"bold"),padx=15,pady=9); self.status_chip.grid(row=0,column=1,rowspan=2,sticky="w",padx=(18,0))
+        self.loading=ttk.Progressbar(header,mode="indeterminate",length=130); self.loading.grid(row=0,column=2,rowspan=2,sticky="w",padx=(12,0)); self.loading.stop()
         self.page_stack=tk.Frame(main,bg=BG); self.page_stack.grid(row=1,column=0,sticky="nsew",padx=28,pady=(0,24)); self.page_stack.grid_rowconfigure(0,weight=1); self.page_stack.grid_columnconfigure(0,weight=1)
         for key,builder in (("home",self._build_home),("preview",self._build_preview),("status",self._build_status),("logs",self._build_logs),("settings",self._build_settings)):
             page=tk.Frame(self.page_stack,bg=BG); page.grid(row=0,column=0,sticky="nsew"); self._pages[key]=page; builder(page)
@@ -121,15 +122,15 @@ class StreamBridgeApp(tk.Tk):
         if self._resolving:return
         try: value=normalize_input_url(self.url_var.get())
         except InvalidStreamUrl as exc: messagebox.showerror("رابط غير صالح",str(exc),parent=self); return
-        self._resolving=True; self.home_status.configure(text="جارٍ استخراج الرابط…",fg=YELLOW); threading.Thread(target=self._extract_background,args=(value,),daemon=True).start()
+        self._resolving=True; self._set_busy(True); self.home_status.configure(text="جارٍ استخراج الرابط…",fg=YELLOW); threading.Thread(target=self._extract_background,args=(value,),daemon=True).start()
 
     def _extract_background(self,value):
         try: result=resolve_stream_url(value)
         except Exception as exc: self.after(0,lambda:self._extract_error(str(exc))); return
         self.after(0,lambda:self._extract_done(result.media_url,result.source_kind))
 
-    def _extract_error(self,msg): self._resolving=False; self.home_status.configure(text="فشل الاستخراج",fg=RED); self.home_connection.configure(text=msg,fg=RED); self._append_log("خطأ الاستخراج",msg)
-    def _extract_done(self,url,kind): self._resolving=False; self.url_var.set(url); self.home_status.configure(text="تم استخراج الرابط",fg=GREEN); self.home_connection.configure(text="رابط مباشر جاهز · انتقل إلى المعاينة لبدء البث",fg=GREEN); self._append_log("المصدر","تم استخراج رابط مباشر" if kind!="direct" else "الرابط المباشر جاهز")
+    def _extract_error(self,msg): self._resolving=False; self._set_busy(False); self.home_status.configure(text="فشل الاستخراج",fg=RED); self.home_connection.configure(text=msg,fg=RED); self._append_log("خطأ الاستخراج",msg)
+    def _extract_done(self,url,kind): self._resolving=False; self._set_busy(False); self.url_var.set(url); self.home_status.configure(text="تم استخراج الرابط",fg=GREEN); self.home_connection.configure(text="رابط مباشر جاهز · انتقل إلى المعاينة لبدء البث",fg=GREEN); self._append_log("المصدر","تم استخراج رابط مباشر" if kind!="direct" else "الرابط المباشر جاهز")
 
     def _get_adjustments(self):
         fps=60 if self.fps_var.get().startswith("60") else 30; width,height=(1920,1080) if self.resolution_var.get().startswith("1080") else (1280,720)
@@ -150,27 +151,29 @@ class StreamBridgeApp(tk.Tk):
         if self._resolving:return
         try:value=normalize_input_url(self.url_var.get())
         except InvalidStreamUrl as exc:messagebox.showerror("رابط غير صالح",str(exc),parent=self);return
-        self._resolving=True; self.start_button.configure(state="disabled",text="جارٍ التجهيز…"); self._set_status("جارٍ فحص الكاميرا وحل الرابط…",YELLOW); threading.Thread(target=self._prepare_stream,args=(value,),daemon=True).start()
+        self._resolving=True; self._set_busy(True); self.start_button.configure(state="disabled",text="جارٍ التجهيز…"); self._set_status("جارٍ استخراج الرابط…",YELLOW); threading.Thread(target=self._prepare_stream,args=(value,),daemon=True).start()
     def _prepare_stream(self,value):
         try:
+            result=resolve_stream_url(value)
+            self.after(0,lambda:self._set_status("تم استخراج الرابط · جارٍ فحص الكاميرا…",YELLOW))
             check=check_unitycapture(self.camera_name_var.get().strip() or DEFAULT_SETTINGS["camera_device"])
             if not check.available:raise RuntimeError(f"الكاميرا الوهمية غير متصلة: {check.message}")
-            result=resolve_stream_url(value)
         except Exception as exc:self.after(0,lambda:self._prepare_error(str(exc)));return
         self.after(0,lambda:self._start_resolved(result.media_url))
     def _prepare_error(self,msg):
-        self._resolving=False; self.start_button.configure(state="normal",text="بدء البث"); self._set_status("تعذر بدء البث",RED); self._append_log("خطأ",msg); self.camera_indicator.configure(text="الكاميرا غير متصلة",fg=RED); messagebox.showerror("تعذر بدء البث",msg,parent=self)
+        self._resolving=False; self._set_busy(False); self.start_button.configure(state="normal",text="بدء البث"); self._set_status("تعذر بدء البث",RED); self._append_log("خطأ",msg); self.camera_indicator.configure(text="الكاميرا غير متصلة",fg=RED); messagebox.showerror("تعذر بدء البث",msg,parent=self)
     def _start_resolved(self,url):
         try:url=validate_stream_url(url)
         except InvalidStreamUrl as exc:self._prepare_error(str(exc));return
-        self._resolving=False; s=dict(DEFAULT_SETTINGS); s.update(self._get_adjustments()); self.worker=StreamBridgeEngine(url,settings=s); self.worker.set_preview_enabled(self.preview_var.get()); self._last_error=False; self.start_button.configure(state="disabled",text="البث يعمل"); self.stop_button.configure(state="normal"); self._set_status("جارٍ تشغيل الكاميرا…",YELLOW); self._append_log("المصدر","تم قبول الرابط وبدء البث"); self.worker.start()
+        self._resolving=False; self._set_busy(False); s=dict(DEFAULT_SETTINGS); s.update(self._get_adjustments()); self.worker=StreamBridgeEngine(url,settings=s); self.worker.set_preview_enabled(self.preview_var.get()); self._last_error=False; self.start_button.configure(state="disabled",text="البث يعمل"); self.stop_button.configure(state="normal"); self._set_status("جارٍ تشغيل الكاميرا…",YELLOW); self._append_log("المصدر","تم قبول الرابط وبدء البث"); self.worker.start()
     def _stop_stream(self):
         if self.worker and self.worker.is_alive(): self._set_status("جارٍ إيقاف البث…",YELLOW); self.stop_button.configure(state="disabled"); self.worker.request_stop()
 
-    def _check_camera_setup(self): self._set_status("جارٍ فحص UnityCapture…",YELLOW); threading.Thread(target=self._camera_check_bg,daemon=True).start()
+    def _check_camera_setup(self): self._set_busy(True); self._set_status("جارٍ فحص UnityCapture…",YELLOW); threading.Thread(target=self._camera_check_bg,daemon=True).start()
     def _camera_check_bg(self):
         result=check_unitycapture(self.camera_name_var.get().strip() or DEFAULT_SETTINGS["camera_device"]); self.after(0,lambda:self._camera_result(result.available,result.message))
     def _camera_result(self,available,msg):
+        self._set_busy(False)
         if available:
             for label in (self.camera_indicator,self.status_camera_label):label.configure(text="الكاميرا متصلة",fg=GREEN)
             self.status_detail.configure(text=msg); self._set_status("UnityCapture متصل",GREEN); messagebox.showinfo("UnityCapture",msg,parent=self)
@@ -220,6 +223,11 @@ class StreamBridgeApp(tk.Tk):
     def _append_log(self,category,text):
         from datetime import datetime
         line=f"{datetime.now().strftime('%H:%M:%S')}  [{category}]  {text}"; self._log_lines=(self._log_lines+[line])[-500:]; self.log_text.configure(state="normal"); self.log_text.insert(tk.END,line+"\n"); self.log_text.see(tk.END); self.log_text.configure(state="disabled")
+    def _set_busy(self,busy):
+        if not hasattr(self,"loading"): return
+        if busy: self.loading.start(12)
+        else: self.loading.stop()
+
     def _set_status(self,text,color):self.status_chip.configure(text=f"الحالة  {text}",fg=color); self.home_status.configure(text=text,fg=color) if hasattr(self,"home_status") else None
     def _on_close(self):
         if self.worker and self.worker.is_alive():self._closing=True;self.worker.request_stop();self._set_status("جارٍ الإغلاق بأمان…",YELLOW)
