@@ -243,3 +243,9 @@ The previous unified dashboard was replaced with explicit visible pages: Home, L
 Share extraction now runs before the UnityCapture preflight in the same background preparation thread, with a visible indeterminate loading indicator. This ensures a missing or slow camera probe cannot prevent link extraction or block Tkinter. FFmpeg stderr and non-zero process termination are surfaced as diagnostic status events instead of being silently retried.
 
 The supplied TikTok share URL resolved successfully in 3.1–3.5 seconds during sandbox testing. The sandbox FFmpeg process could not decode the returned HLS endpoint reliably (one run exited with signal 11 and ffprobe timed out), so end-to-end preview success is not claimed without a real Windows/UnityCapture validation. The unit suite remains 15 passing tests.
+
+## 17. v1.5.2 TikTok timeout and redirect addendum (2026-10-06)
+
+TikTok short links are first opened with a mobile Chrome User-Agent and a minimum 30-second timeout to capture the final `www.tiktok.com/@.../live` URL. yt-dlp receives the same modern headers, a TikTok Referer, and bounded retries. The preview start path requires a successfully cached extracted media URL and refuses to start FFmpeg otherwise.
+
+Mandatory live test: `https://vt.tiktok.com/ZS9DubXVgusRS-ZqqQ5/` redirected to a TikTok live page in about 2.6 seconds and produced an HTTP 200 `application/x-mpegURL` response containing `#EXTM3U` in about 15.1 seconds. Automated suite: 17 passing tests.

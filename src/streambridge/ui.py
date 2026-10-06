@@ -23,11 +23,11 @@ BG="#080B12"; SIDEBAR="#0C111B"; PANEL="#111927"; TEXT="#F4F7FB"; MUTED="#91A0B5
 class StreamBridgeApp(tk.Tk):
     def __init__(self, initial_url: str = "") -> None:
         super().__init__()
-        self.title("StreamBridge 1.5.1 — كاميرا بث افتراضية")
+        self.title("StreamBridge 1.5.2 — كاميرا بث افتراضية")
         try: self.iconbitmap(str(Path(__file__).resolve().parent / "assets" / "streambridge.ico"))
         except tk.TclError: pass
         self.geometry("1440x900"); self.minsize(1180,760); self.configure(bg=BG)
-        self.worker: StreamBridgeEngine|None=None; self._photo=None; self._last_display_frame=None
+        self.worker: StreamBridgeEngine|None=None; self._photo=None; self._last_display_frame=None; self._extracted_media_url=""; self._extracted_input_url=""
         self._closing=False; self._resolving=False; self._last_error=False; self._adjustment_after=None
         self._icons={}; self._pages={}; self._nav={}; self._log_lines=[]
         self.preview_var=tk.BooleanVar(value=True); self.url_var=tk.StringVar(value=initial_url)
@@ -130,7 +130,7 @@ class StreamBridgeApp(tk.Tk):
         self.after(0,lambda:self._extract_done(result.media_url,result.source_kind))
 
     def _extract_error(self,msg): self._resolving=False; self._set_busy(False); self.home_status.configure(text="فشل الاستخراج",fg=RED); self.home_connection.configure(text=msg,fg=RED); self._append_log("خطأ الاستخراج",msg)
-    def _extract_done(self,url,kind): self._resolving=False; self._set_busy(False); self.url_var.set(url); self.home_status.configure(text="تم استخراج الرابط",fg=GREEN); self.home_connection.configure(text="رابط مباشر جاهز · انتقل إلى المعاينة لبدء البث",fg=GREEN); self._append_log("المصدر","تم استخراج رابط مباشر" if kind!="direct" else "الرابط المباشر جاهز")
+    def _extract_done(self,url,kind): self._resolving=False; self._set_busy(False); self._extracted_media_url=url; self.url_var.set(url); self._extracted_input_url=url; self.home_status.configure(text="تم استخراج الرابط",fg=GREEN); self.home_connection.configure(text="رابط M3U8/RTSP جاهز · انتقل إلى المعاينة لتشغيله",fg=GREEN); self._append_log("المصدر","تم استخراج رابط مباشر" if kind!="direct" else "الرابط المباشر جاهز")
 
     def _get_adjustments(self):
         fps=60 if self.fps_var.get().startswith("60") else 30; width,height=(1920,1080) if self.resolution_var.get().startswith("1080") else (1280,720)
@@ -149,6 +149,8 @@ class StreamBridgeApp(tk.Tk):
     def _toggle_stream(self):
         if self.worker and self.worker.is_alive(): self._stop_stream(); return
         if self._resolving:return
+        if not self._extracted_media_url or self.url_var.get().strip() != self._extracted_input_url:
+            self._set_status("يجب استخراج رابط M3U8/RTSP أولًا…",YELLOW); self._show_page("home"); self._extract_only(); return
         try:value=normalize_input_url(self.url_var.get())
         except InvalidStreamUrl as exc:messagebox.showerror("رابط غير صالح",str(exc),parent=self);return
         self._resolving=True; self._set_busy(True); self.start_button.configure(state="disabled",text="جارٍ التجهيز…"); self._set_status("جارٍ استخراج الرابط…",YELLOW); threading.Thread(target=self._prepare_stream,args=(value,),daemon=True).start()

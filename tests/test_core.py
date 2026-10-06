@@ -13,7 +13,14 @@ from streambridge.core import (
     read_exact,
     validate_stream_url,
 )
-from streambridge.resolver import classify_input_url, normalize_input_url, resolve_stream_url
+from streambridge.resolver import (
+    DEFAULT_TIMEOUT,
+    MOBILE_USER_AGENT,
+    _build_yt_dlp_options,
+    classify_input_url,
+    normalize_input_url,
+    resolve_stream_url,
+)
 
 
 class StreamCoreTests(unittest.TestCase):
@@ -95,6 +102,18 @@ class StreamCoreTests(unittest.TestCase):
         result = resolve_stream_url("www.example/live.m3u8")
         self.assertEqual(result.media_url, "https://www.example/live.m3u8")
         self.assertEqual(result.source_kind, "direct")
+
+    def test_share_extractor_uses_at_least_thirty_second_timeout(self):
+        options = _build_yt_dlp_options(10)
+        self.assertEqual(DEFAULT_TIMEOUT, 30.0)
+        self.assertEqual(options["socket_timeout"], 30.0)
+        self.assertGreaterEqual(options["retries"], 2)
+
+    def test_share_extractor_uses_mobile_user_agent_and_referer(self):
+        headers = _build_yt_dlp_options(30)["http_headers"]
+        self.assertIn("Android", headers["User-Agent"])
+        self.assertEqual(headers["User-Agent"], MOBILE_USER_AGENT)
+        self.assertEqual(headers["Referer"], "https://www.tiktok.com/")
 
     def test_pk_overlay_changes_only_frame_pixels_and_preserves_shape(self):
         frame = np.zeros((120, 320, 3), dtype=np.uint8)
