@@ -14,8 +14,9 @@ from PIL import Image, ImageOps, ImageTk
 from .audio import list_output_devices
 from .camera_check import UNITYCAPTURE_URL, check_unitycapture
 from .core import InvalidStreamUrl, validate_stream_url
-from .engine import DEFAULT_SETTINGS, StreamBridgeEngine
+from .engine import DEFAULT_SETTINGS, StreamBridgeEngine, StreamPreviewEngine
 from .resolver import normalize_input_url, resolve_stream_url
+from .relay import LocalHlsRelay
 
 BG="#080B12"; SIDEBAR="#0C111B"; PANEL="#111927"; TEXT="#F4F7FB"; MUTED="#91A0B5"; CYAN="#25F4EE"; PINK="#FE2C55"; GREEN="#38D996"; YELLOW="#F6C75B"; RED="#FF6B7F"; BORDER="#202B3D"
 
@@ -23,11 +24,11 @@ BG="#080B12"; SIDEBAR="#0C111B"; PANEL="#111927"; TEXT="#F4F7FB"; MUTED="#91A0B5
 class StreamBridgeApp(tk.Tk):
     def __init__(self, initial_url: str = "") -> None:
         super().__init__()
-        self.title("StreamBridge 1.5.3 — كاميرا بث افتراضية")
+        self.title("StreamBridge 1.5.5 — كاميرا بث افتراضية")
         try: self.iconbitmap(str(Path(__file__).resolve().parent / "assets" / "streambridge.ico"))
         except tk.TclError: pass
         self.geometry("1440x900"); self.minsize(1180,760); self.configure(bg=BG)
-        self.worker: StreamBridgeEngine|None=None; self._photo=None; self._last_display_frame=None; self._extracted_media_url=""; self._extracted_input_url=""; self._preview_requested=False
+        self.worker: StreamBridgeEngine|None=None; self.preview_worker: StreamPreviewEngine|None=None; self.relay: LocalHlsRelay|None=None; self._photo=None; self._last_display_frame=None; self._extracted_media_url=""; self._extracted_input_url=""; self._preview_requested=False
         self._closing=False; self._resolving=False; self._last_error=False; self._adjustment_after=None
         self._icons={}; self._pages={}; self._nav={}; self._log_lines=[]
         self.preview_var=tk.BooleanVar(value=True); self.url_var=tk.StringVar(value=initial_url)
@@ -120,8 +121,10 @@ class StreamBridgeApp(tk.Tk):
 
     def _preview_action(self):
         self._show_page("preview")
+        if self.preview_worker and self.preview_worker.is_alive():
+            return
         if self._extracted_media_url and self.url_var.get().strip() == self._extracted_input_url:
-            self._toggle_stream()
+            self._start_preview(self._extracted_media_url)
         else:
             self._preview_requested=True
             self._extract_only()
@@ -138,7 +141,7 @@ class StreamBridgeApp(tk.Tk):
         self.after(0,lambda:self._extract_done(result.media_url,result.source_kind))
 
     def _extract_error(self,msg): self._resolving=False; self._set_busy(False); self.home_status.configure(text="فشل الاستخراج",fg=RED); self.home_connection.configure(text=msg,fg=RED); self._append_log("خطأ الاستخراج",msg)
-    def _extract_done(self,url,kind): self._resolving=False; self._set_busy(False); self._extracted_media_url=url; self.url_var.set(url); self._extracted_input_url=url; self.home_status.configure(text="تم استخراج الرابط",fg=GREEN); self.home_connection.configure(text="رابط M3U8/RTSP جاهز · انتقل إلى المعاينة لتشغيله",fg=GREEN); self._append_log("المصدر","تم استخراج رابط مباشر" if kind!="direct" else "الرابط المباشر جاهز"); self.after(0,self._toggle_stream) if self._preview_requested else None; self._preview_requested=False
+    def _extract_done(self,url,kind): self._resolving=False; self._set_busy(False); self._extracted_media_url=url; self.url_var.set(url); self._extracted_input_url=url; self.home_status.configure(text="تم استخراج الرابط",fg=GREEN); self.home_connection.configure(text="رابط M3U8/RTSP جاهز · المعاينة مستقلة عن الكاميرا",fg=GREEN); self._append_log("المصدر","تم استخراج رابط مباشر" if kind!="direct" else "الرابط المباشر جاهز"); self.after(0,lambda:self._start_preview(url)) if self._preview_requested else None; self._preview_requested=False
 
     def _get_adjustments(self):
         fps=60 if self.fps_var.get().startswith("60") else 30; width,height=(1920,1080) if self.resolution_var.get().startswith("1080") else (1280,720)
@@ -162,6 +165,34 @@ class StreamBridgeApp(tk.Tk):
         try:value=normalize_input_url(self.url_var.get())
         except InvalidStreamUrl as exc:messagebox.showerror("رابط غير صالح",str(exc),parent=self);return
         self._resolving=True; self._set_busy(True); self.start_button.configure(state="disabled",text="جارٍ التجهيز…"); self._set_status("جارٍ استخراج الرابط…",YELLOW); threading.Thread(target=self._prepare_stream,args=(value,),daemon=True).start()
+
+    def _start_preview(self,url):
+        if self.preview_worker and self.preview_worker.is_alive(): return
+        try: url=validate_stream_url(url)
+        except InvalidStreamUrl as exc: self._set_status(str(exc),RED); return
+        if self.relay and self.relay.is_running():
+            self._launch_preview(self.relay.url)
+        else:
+            self._set_busy(True); self._set_status("جارٍ تشغيل HLS Relay المحلي…",YELLOW); self._start_relay_async(url, self._launch_preview)
+
+    def _launch_preview(self,local_url):
+        self._set_busy(False); settings=dict(DEFAULT_SETTINGS); settings.update(self._get_adjustments()); self.preview_worker=StreamPreviewEngine(local_url,settings=settings); self.preview_worker.start(); self._set_status("المعاينة تعمل من HLS المحلي · الكاميرا مستقلة",CYAN); self._append_log("المعاينة",f"بدأت من {local_url}")
+
+    def _start_relay_async(self,source_url,callback):
+        def run():
+            relay=None
+            try:
+                relay=LocalHlsRelay(source_url); local_url=relay.start(); self.after(0,lambda:self._relay_ready(relay,local_url,callback))
+            except Exception as exc:
+                if relay: relay.stop()
+                self.after(0,lambda:self._relay_failed(str(exc)))
+        threading.Thread(target=run,name="HlsRelayStarter",daemon=True).start()
+
+    def _relay_ready(self,relay,local_url,callback):
+        self.relay=relay; self._set_busy(False); self._set_status("HLS Relay المحلي متصل",GREEN); self._append_log("Relay",local_url); callback(local_url)
+
+    def _relay_failed(self,msg):
+        self._set_busy(False); self._set_status("فشل HLS Relay المحلي",RED); self._append_log("Relay",msg); messagebox.showerror("تعذر تشغيل HLS Relay",msg,parent=self)
     def _prepare_stream(self,value):
         try:
             result=resolve_stream_url(value)
@@ -169,10 +200,13 @@ class StreamBridgeApp(tk.Tk):
             check=check_unitycapture(self.camera_name_var.get().strip() or DEFAULT_SETTINGS["camera_device"])
             if not check.available:raise RuntimeError(f"الكاميرا الوهمية غير متصلة: {check.message}")
         except Exception as exc:self.after(0,lambda:self._prepare_error(str(exc)));return
-        self.after(0,lambda:self._start_resolved(result.media_url))
+        if self.relay and self.relay.is_running():
+            self.after(0,lambda:self._start_camera_resolved(self.relay.url))
+        else:
+            self._start_relay_async(result.media_url, self._start_camera_resolved)
     def _prepare_error(self,msg):
         self._resolving=False; self._set_busy(False); self.start_button.configure(state="normal",text="بدء البث"); self._set_status("تعذر بدء البث",RED); self._append_log("خطأ",msg); self.camera_indicator.configure(text="الكاميرا غير متصلة",fg=RED); messagebox.showerror("تعذر بدء البث",msg,parent=self)
-    def _start_resolved(self,url):
+    def _start_camera_resolved(self,url):
         try:url=validate_stream_url(url)
         except InvalidStreamUrl as exc:self._prepare_error(str(exc));return
         self._resolving=False; self._set_busy(False); s=dict(DEFAULT_SETTINGS); s.update(self._get_adjustments()); self.worker=StreamBridgeEngine(url,settings=s); self.worker.set_preview_enabled(self.preview_var.get()); self._last_error=False; self.start_button.configure(state="disabled",text="البث يعمل"); self.stop_button.configure(state="normal"); self._set_status("جارٍ تشغيل الكاميرا…",YELLOW); self._append_log("المصدر","تم قبول الرابط وبدء البث"); self.worker.start()
@@ -197,27 +231,28 @@ class StreamBridgeApp(tk.Tk):
         self.audio_devices={f"{x['index']} · {x['name']}":int(x['index']) for x in devices}; names=list(self.audio_devices); self.audio_combo.configure(values=names); self.audio_device_var.set(next((n for n in names if "cable input" in n.lower()),names[0] if names else ""))
     def _toggle_preview(self):
         self.preview_var.set(not self.preview_var.get()); enabled=self.preview_var.get(); self.preview_button.configure(text="إخفاء المعاينة" if enabled else "تشغيل المعاينة");
-        if self.worker and self.worker.is_alive():self.worker.set_preview_enabled(enabled)
-        if not enabled:self.preview_label.configure(image="",text="المعاينة مخفية\nإخراج الكاميرا مستمر")
+        if not enabled:self.preview_label.configure(image="",text="المعاينة مخفية\nالكاميرا تستمر في الخلفية")
 
     def _poll_worker(self):
-        if self.worker:
+        for active_worker in tuple(x for x in (self.worker, self.preview_worker) if x):
+            worker=active_worker
             while True:
-                try:kind,payload=self.worker.events.get_nowait()
+                try:kind,payload=worker.events.get_nowait()
                 except queue.Empty:break
                 if kind=="status":self._set_status(str(payload),GREEN if "connected" in str(payload).lower() or "ready" in str(payload).lower() else YELLOW); self._append_log("الحالة",str(payload))
                 elif kind=="camera":self.camera_indicator.configure(text="الكاميرا متصلة",fg=GREEN); self.status_camera_label.configure(text="الكاميرا متصلة",fg=GREEN); self._append_log("الكاميرا",str(payload))
                 elif kind=="metrics":
                     self._last_metrics=payload; text=f"المصدر: {payload.get('signal','انتظار')} · الإطارات: {payload.get('frames',0)} · {payload.get('fps',0):.1f} FPS · {payload.get('resolution','1280×720')}"; self.status_metrics.configure(text=text); self.home_connection.configure(text=text,fg=GREEN if payload.get('signal')=="LIVE" else YELLOW)
                 elif kind=="fatal":self._last_error=True; self._set_status(str(payload),RED); self.camera_indicator.configure(text="الكاميرا غير متصلة",fg=RED); self.status_camera_label.configure(text="الكاميرا غير متصلة",fg=RED); self._append_log("خطأ حرج",str(payload))
-                elif kind=="finished":self.start_button.configure(state="normal",text="بدء البث"); self.stop_button.configure(state="disabled"); self._set_status("تم إيقاف البث",MUTED)
-            if self.preview_var.get():
+                elif kind=="finished":self.start_button.configure(state="normal",text="بدء البث"); self.stop_button.configure(state="disabled"); self._set_status("تم إيقاف الكاميرا",MUTED)
+                elif kind=="preview_finished":self._append_log("المعاينة","توقفت؛ إخراج الكاميرا لا يتأثر")
+            if worker is self.preview_worker and self.preview_var.get():
                 newest=None
                 while True:
-                    try:newest=self.worker.preview_frames.get_nowait()
+                    try:newest=worker.preview_frames.get_nowait()
                     except queue.Empty:break
                 if newest is not None:self._show_frame(newest)
-        if self._closing and (not self.worker or not self.worker.is_alive()):self.destroy();return
+        if self._closing and (not self.worker or not self.worker.is_alive()) and (not self.preview_worker or not self.preview_worker.is_alive()):self.destroy();return
         self.after(40,self._poll_worker)
 
     def _show_frame(self,bgr):
@@ -240,5 +275,8 @@ class StreamBridgeApp(tk.Tk):
 
     def _set_status(self,text,color):self.status_chip.configure(text=f"الحالة  {text}",fg=color); self.home_status.configure(text=text,fg=color) if hasattr(self,"home_status") else None
     def _on_close(self):
-        if self.worker and self.worker.is_alive():self._closing=True;self.worker.request_stop();self._set_status("جارٍ الإغلاق بأمان…",YELLOW)
+        if self.worker and self.worker.is_alive():self._closing=True;self.worker.request_stop()
+        if self.preview_worker and self.preview_worker.is_alive():self._closing=True;self.preview_worker.request_stop()
+        if self.relay:self.relay.stop(); self.relay=None
+        if self._closing:self._set_status("جارٍ الإغلاق بأمان…",YELLOW)
         else:self.destroy()

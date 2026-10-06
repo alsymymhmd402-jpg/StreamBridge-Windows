@@ -204,6 +204,86 @@ class FFmpegDecoder(threading.Thread):
         self.events.put(("decoder_finished", None))
 
 
+class StreamPreviewEngine(threading.Thread):
+    """Preview-only pipeline: decoder and effects, never opens UnityCapture."""
+
+    def __init__(self, url: str, settings: dict | None = None, decoder_factory=None):
+        super().__init__(name="StreamPreview", daemon=True)
+        self.url = url
+        self.decoder_factory = decoder_factory or FFmpegDecoder
+        self.stop_event = threading.Event()
+        self.events: queue.Queue = queue.Queue()
+        self.preview_frames: queue.Queue = queue.Queue(maxsize=1)
+        self._decoded_frames: queue.Queue = queue.Queue(maxsize=1)
+        self._settings_lock = threading.RLock()
+        self._settings = dict(DEFAULT_SETTINGS)
+        if settings:
+            self._settings.update(settings)
+
+    def settings_snapshot(self) -> dict:
+        with self._settings_lock:
+            return dict(self._settings)
+
+    def update_adjustments(self, **values) -> None:
+        with self._settings_lock:
+            previous = dict(self._settings)
+            self._settings.update(values)
+        if previous.get("speed") != values.get("speed", previous.get("speed")) and hasattr(self, "decoder"):
+            self.decoder.request_reconfigure()
+
+    def set_preview_enabled(self, enabled: bool) -> None:
+        # Kept for UI symmetry. Stopping the preview is explicit via request_stop().
+        return None
+
+    def request_stop(self) -> None:
+        self.stop_event.set()
+        decoder = getattr(self, "decoder", None)
+        if decoder:
+            decoder.stop()
+
+    def run(self) -> None:
+        settings = self.settings_snapshot()
+        self.events.put(("status", "Preview: opening stream without UnityCapture"))
+        self.decoder = self.decoder_factory(
+            self.url, self._decoded_frames, self.events, self.stop_event, self.settings_snapshot
+        )
+        self.decoder.start()
+        last_frame = None
+        last_frame_at = 0.0
+        next_metrics = time.monotonic()
+        try:
+            while not self.stop_event.is_set():
+                now = time.monotonic()
+                try:
+                    last_frame = self._decoded_frames.get_nowait()
+                    last_frame_at = now
+                except queue.Empty:
+                    pass
+                if last_frame is not None and now - last_frame_at <= SIGNAL_LOST_AFTER_SECONDS:
+                    current = self.settings_snapshot()
+                    output = apply_visual_adjustments(
+                        last_frame,
+                        brightness=float(current.get("brightness", 0.0)),
+                        contrast=float(current.get("contrast", 1.0)),
+                        hue_shift=float(current.get("hue_shift", 0.0)),
+                    ) if current.get("visual_enabled", True) else last_frame
+                    _replace_latest(self.preview_frames, output.copy())
+                    signal = "LIVE"
+                else:
+                    signal = "RECONNECTING"
+                if now >= next_metrics:
+                    self.events.put(("metrics", {"fps": 0.0, "frames": 0, "signal": signal, "resolution": f"{settings['width']}×{settings['height']}", "target_fps": settings["fps"]}))
+                    next_metrics = now + 1.0
+                self.stop_event.wait(0.01)
+        except Exception as exc:
+            self.events.put(("fatal", f"Preview failed: {type(exc).__name__}: {exc}"))
+        finally:
+            self.request_stop()
+            if self.decoder.is_alive():
+                self.decoder.join(timeout=2.0)
+            self.events.put(("preview_finished", None))
+
+
 class StreamBridgeEngine(threading.Thread):
     """Feeds UnityCapture steadily; hidden preview never interrupts camera output."""
 

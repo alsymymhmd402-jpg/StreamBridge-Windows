@@ -5,7 +5,7 @@ import unittest
 
 import numpy as np
 
-from streambridge.engine import HEIGHT, WIDTH, StreamBridgeEngine
+from streambridge.engine import HEIGHT, WIDTH, StreamBridgeEngine, StreamPreviewEngine
 
 
 class FakeCamera:
@@ -105,6 +105,20 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(engine.decoder.reconfigure_calls, 1)
         engine.request_stop()
         engine.join(timeout=3)
+
+    def test_preview_engine_runs_without_opening_virtual_camera(self):
+        preview = StreamPreviewEngine(
+            "https://example.test/live.m3u8",
+            decoder_factory=FakeDecoder,
+        )
+        preview.start()
+        deadline = time.monotonic() + 1.0
+        while preview.preview_frames.empty() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        preview.request_stop()
+        preview.join(timeout=3)
+        self.assertFalse(preview.is_alive(), "preview engine should stop cleanly")
+        self.assertFalse(preview.preview_frames.empty(), "preview should receive frames without UnityCapture")
 
 
 if __name__ == "__main__":

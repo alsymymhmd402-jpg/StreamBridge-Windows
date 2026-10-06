@@ -257,3 +257,9 @@ The default editable input is the supplied TikTok short URL. A blue `تشغيل 
 The resolver now uses a cookie-preserving HTTP session, follows redirects, retries the preliminary request three times, enforces a 30-second minimum socket timeout, and supplies mobile Chrome headers plus TikTok Referer. The Windows build includes `streambridge.manifest` with `requireAdministrator` for UnityCapture/device access.
 
 Live test result for `https://vt.tiktok.com/ZS9DunAhNDa9x-XGD5c/`: redirect succeeded in 2.41 seconds; returned M3U8 responded HTTP 200 in 15.72 seconds with `application/x-mpegURL`, `#EXTM3U`, and 656 bytes sampled. Automated tests: 17 passing.
+
+## 20. v1.5.5 local HLS relay addendum (2026-10-06)
+
+After resolver success, `LocalHlsRelay` starts a localhost HTTP HLS proxy. It fetches the upstream playlist and rewrites every segment and HLS URI attribute to `/segment?url=...`; both `StreamPreviewEngine` and `StreamBridgeEngine` consume the local playlist. The relay does not depend on UnityCapture and is stopped only during application shutdown, not when preview is hidden.
+
+The proxy was validated with an upstream playlist and segment fixture: local playlist rewrite and segment forwarding both passed. The supplied TikTok channel stopped being live during the later end-to-end run and returned `channel not currently live`; this is reported as an upstream state, not presented as a successful live-stream test.
