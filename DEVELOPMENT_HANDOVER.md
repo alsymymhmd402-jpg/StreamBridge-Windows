@@ -233,3 +233,7 @@ Navigation uses custom SVG icon sources with packaged PNG runtime assets. A mult
 The desktop UI is now an Arabic RTL-oriented unified control surface. A portrait 9:16 phone preview is placed beside a single control panel containing source, start/stop/preview controls, camera connectivity status, visual FX, audio FX, metrics, and logs. Preview cropping is display-only and does not alter the outgoing camera frame.
 
 Camera preflight and share-link resolution run in background threads so a missing UnityCapture device, slow network, or resolver timeout cannot block Tkinter. The existing decoder, camera, audio, and latest-frame queue architecture is preserved.
+
+## 15. v1.5.0 multi-page Arabic UI addendum (2026-10-06)
+
+The previous unified dashboard was replaced with explicit visible pages: Home, Live Preview and FX, Camera Status, Logs and Diagnostics, and General Settings. Home is limited to source entry, extraction, and connection state. The preview page alone combines the portrait 9:16 phone view with FX controls and keeps start/stop/camera status outside the video frame. Camera checks and share extraction remain asynchronous.

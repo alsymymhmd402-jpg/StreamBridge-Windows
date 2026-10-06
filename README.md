@@ -1,25 +1,26 @@
-# StreamBridge Windows v1.4.0
+# StreamBridge Windows v1.5.0
 
-واجهة Windows عربية موحّدة لبث مصادر TikTok وRTSP/HLS إلى كاميرا UnityCapture المتوافقة مع TikTok LIVE Studio.
+تطبيق Windows عربي RTL لبث TikTok وRTSP/HLS إلى كاميرا UnityCapture المتوافقة مع TikTok LIVE Studio.
 
-## ما الجديد في v1.4.0
+## الصفحات
 
-- واجهة عربية كاملة بتخطيط RTL بصري: لوحة التحكم، المعاينة، التأثيرات، الحالة، السجل، ورسائل التشغيل.
-- لوحة موحّدة تجمع إطار الهاتف العمودي 9:16 مع أدوات السطوع والتباين ودرجة اللون والسرعة ونبرة الصوت ومستوى الصوت.
-- أزرار بدء وإيقاف وتشغيل المعاينة خارج الفيديو، مع مؤشر مستقل لاتصال UnityCapture.
-- المعاينة لا تجمد الواجهة أثناء فحص الكاميرا أو استخراج رابط TikTok؛ جميع العمليات الثقيلة تعمل في خيوط خلفية.
-- أيقونات SVG/PNG مخصصة وملف `streambridge.ico` مضمّن في EXE.
-- المعاينة تملأ إطار الهاتف بقص مركزي بلا أشرطة سوداء، بينما يبقى إخراج الكاميرا الأصلي مستقلًا.
+- **الرئيسية:** إدخال الرابط، زر استخراج الرابط، وحالة الاتصال فقط.
+- **المعاينة والمؤثرات:** إطار هاتف 9:16 في اليمين، وأدوات السطوع والتباين ودرجة اللون والسرعة والصوت في اليسار، مع أزرار بدء/إيقاف ومؤشر الكاميرا خارج الفيديو.
+- **حالة الكاميرا:** فحص UnityCapture وتشخيص الاتصال.
+- **السجلات والتشخيص:** أخطاء الشبكة وFFmpeg ودورة حياة البث.
+- **الإعدادات العامة:** الدقة، FPS، اسم الكاميرا، وأجهزة VB-CABLE.
 
-## تثبيت UnityCapture
+كل صفحة مستقلة وظاهرة في شريط التنقل، ولا يتم دمجها أو إخفاؤها. المعاينة لا توقف الخيوط الخلفية عند غياب UnityCapture أو أثناء استخراج الرابط.
 
-استخدم الحزمة الرسمية فقط: [تحميل UnityCapture ZIP](https://github.com/schellingb/UnityCapture/archive/refs/heads/master.zip). بعد فك الضغط شغّل `Install\\Install.bat` عبر **Run as administrator**. يجب أن تبقى ملفات DLL بجانب الملف. [التعليمات الرسمية](https://github.com/schellingb/UnityCapture).
+## UnityCapture
 
-## البناء والاختبار
+[تحميل الحزمة الرسمية ZIP](https://github.com/schellingb/UnityCapture/archive/refs/heads/master.zip) ثم فك الضغط وتشغيل `Install\\Install.bat` عبر **Run as administrator**. [التعليمات الرسمية](https://github.com/schellingb/UnityCapture).
+
+## البناء
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
 .\\build_windows.ps1 -Mode onefile
 ```
 
-يشغّل البناء الاختبارات الآلية ويضمّن الأيقونات داخل EXE. نجاح CI لا يغني عن اختبار UnityCapture وTikTok LIVE Studio على جهاز Windows فعلي.
+يشغّل البناء الاختبارات الآلية ويضمّن أيقونات SVG/PNG وملف Windows ICO داخل EXE.

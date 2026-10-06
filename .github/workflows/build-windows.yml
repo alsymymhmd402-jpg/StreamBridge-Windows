@@ -1,4 +1,4 @@
-name: Build StreamBridge v1.4.0 for Windows
+name: Build StreamBridge v1.5.0 for Windows
 
 on:
   workflow_dispatch:
@@ -24,10 +24,10 @@ jobs:
         shell: pwsh
         run: .\build_windows.ps1 -Mode onefile
 
-      - name: Upload StreamBridge v1.4.0 EXE
+      - name: Upload StreamBridge v1.5.0 EXE
         uses: actions/upload-artifact@v4
         with:
-          name: StreamBridge-v1.4.0-Windows-x64
+          name: StreamBridge-v1.5.0-Windows-x64
           path: dist/StreamBridge.exe
           if-no-files-found: error
           retention-days: 14
