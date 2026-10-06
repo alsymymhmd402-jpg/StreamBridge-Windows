@@ -227,3 +227,9 @@ The v1.2.0 CI artifact remains a Windows build and must be validated on a real a
 The UI now presents a fixed portrait 9:16 mobile viewframe and center-crops preview content to fill it without black bars. This transformation is preview-only; the outgoing UnityCapture frame dimensions and decoder path are unchanged.
 
 Navigation uses custom SVG icon sources with packaged PNG runtime assets. A multi-size `streambridge.ico` is passed to PyInstaller and assigned to the Tk window. The official UnityCapture repository, ZIP package, and Install.bat links are documented; the application never downloads or executes a driver installer automatically.
+
+## 14. v1.4.0 Arabic unified UI addendum (2026-10-06)
+
+The desktop UI is now an Arabic RTL-oriented unified control surface. A portrait 9:16 phone preview is placed beside a single control panel containing source, start/stop/preview controls, camera connectivity status, visual FX, audio FX, metrics, and logs. Preview cropping is display-only and does not alter the outgoing camera frame.
+
+Camera preflight and share-link resolution run in background threads so a missing UnityCapture device, slow network, or resolver timeout cannot block Tkinter. The existing decoder, camera, audio, and latest-frame queue architecture is preserved.
