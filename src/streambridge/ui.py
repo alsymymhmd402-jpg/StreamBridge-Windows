@@ -6,9 +6,10 @@ import threading
 import tkinter as tk
 from tkinter import messagebox, ttk
 import webbrowser
+from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageTk
+from PIL import Image, ImageOps, ImageTk
 
 from .audio import list_output_devices
 from .camera_check import UNITYCAPTURE_URL, check_unitycapture
@@ -30,12 +31,12 @@ RED = "#FF6B7F"
 BORDER = "#202B3D"
 
 NAV_ITEMS = [
-    ("home", "⌂", "Home"),
-    ("preview", "◉", "Live Preview"),
-    ("status", "◈", "Bridge Status"),
-    ("logs", "≡", "Logs & Diagnostics"),
-    ("fx", "✦", "Media FX"),
-    ("settings", "⚙", "Settings"),
+    ("home", "dashboard", "Home"),
+    ("preview", "preview", "Live Preview"),
+    ("status", "status", "Bridge Status"),
+    ("logs", "logs", "Logs & Diagnostics"),
+    ("fx", "fx", "Media FX"),
+    ("settings", "settings", "Settings"),
 ]
 
 
@@ -43,6 +44,10 @@ class StreamBridgeApp(tk.Tk):
     def __init__(self, initial_url: str = "") -> None:
         super().__init__()
         self.title("StreamBridge 1.2.0 — Virtual Camera")
+        try:
+            self.iconbitmap(str(Path(__file__).resolve().parent / "assets" / "streambridge.ico"))
+        except tk.TclError:
+            pass
         self.geometry("1240x820")
         self.minsize(1020, 700)
         self.configure(bg=BG)
@@ -72,10 +77,23 @@ class StreamBridgeApp(tk.Tk):
         self._adjustment_after: str | None = None
         self._last_metrics = {"fps": 0.0, "frames": 0, "signal": "WAITING", "resolution": "1280×720", "target_fps": 30}
         self._log_lines: list[str] = []
+        self._icons = self._load_icons()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self._build_ui()
         self.after(100, self._refresh_audio_devices)
         self.after(40, self._poll_worker)
+
+    @staticmethod
+    def _load_icons() -> dict[str, ImageTk.PhotoImage]:
+        assets = Path(__file__).resolve().parent / "assets" / "icons"
+        loaded = {}
+        for name in ("dashboard", "preview", "status", "logs", "fx", "settings"):
+            try:
+                image = Image.open(assets / f"{name}.png").convert("RGBA").resize((22, 22), Image.Resampling.LANCZOS)
+                loaded[name] = ImageTk.PhotoImage(image)
+            except (OSError, tk.TclError):
+                continue
+        return loaded
 
     def _build_ui(self) -> None:
         self.grid_columnconfigure(1, weight=1)
@@ -94,7 +112,7 @@ class StreamBridgeApp(tk.Tk):
                  font=("Segoe UI", 10, "bold"), anchor="w").grid(row=0, column=0, sticky="w")
         tk.Label(header, text="Direct input  ·  Local processing  ·  DirectShow output", bg=BG, fg=MUTED,
                  font=("Segoe UI", 9), anchor="w").grid(row=1, column=0, sticky="w", pady=(4, 0))
-        self.status_chip = tk.Label(header, text="●  STOPPED", bg="#172233", fg=MUTED,
+        self.status_chip = tk.Label(header, text="STATUS  STOPPED", bg="#172233", fg=MUTED,
                                     font=("Segoe UI", 9, "bold"), padx=14, pady=9)
         self.status_chip.grid(row=0, column=1, rowspan=2, sticky="e")
 
@@ -137,9 +155,9 @@ class StreamBridgeApp(tk.Tk):
         self.nav_buttons: dict[str, tk.Button] = {}
         for key, icon, label in NAV_ITEMS:
             btn = tk.Button(
-                side, text=f"{icon}   {label}", command=lambda page=key: self._show_page(page),
+                side, text=label, image=self._icons.get(icon), compound="left", command=lambda page=key: self._show_page(page),
                 anchor="w", bg=SIDEBAR, fg=MUTED, activebackground="#182335", activeforeground=TEXT,
-                relief="flat", bd=0, padx=19, pady=12, font=("Segoe UI", 10, "bold"), cursor="hand2"
+                relief="flat", bd=0, padx=16, pady=12, font=("Segoe UI", 10, "bold"), cursor="hand2"
             )
             btn.pack(fill="x", padx=10, pady=2)
             self.nav_buttons[key] = btn
@@ -299,7 +317,7 @@ class StreamBridgeApp(tk.Tk):
         return "break"
 
     def _build_preview_page(self, page: tk.Frame) -> None:
-        self._page_title(page, "Live Preview", "The video shown here is the same processed frame sent to UnityCapture.")
+        self._page_title(page, "Live Preview", "Mobile viewframe · 9:16 crop · the outgoing camera frame remains unchanged.")
         top = tk.Frame(page, bg=BG)
         top.pack(fill="x", pady=(0, 10))
         self.preview_check = tk.Checkbutton(
@@ -312,9 +330,12 @@ class StreamBridgeApp(tk.Tk):
         self.preview_dimensions.pack(side="right")
         self.preview_panel = tk.Frame(page, bg="#050912", highlightthickness=1, highlightbackground=BORDER)
         self.preview_panel.pack(fill="both", expand=True)
-        self.preview_label = tk.Label(self.preview_panel, text="Preview appears here after the stream starts\n\nCamera output remains independent of this page",
+        self.phone_frame = tk.Frame(self.preview_panel, bg="#02040A", highlightthickness=2, highlightbackground="#26364C", width=378, height=672)
+        self.phone_frame.pack(expand=True, padx=18, pady=12)
+        self.phone_frame.pack_propagate(False)
+        self.preview_label = tk.Label(self.phone_frame, text="Preview appears here after the stream starts\n\nCamera output remains independent of this page",
                                       bg="#050912", fg=MUTED, font=("Segoe UI", 13), compound="center", anchor="center")
-        self.preview_label.pack(fill="both", expand=True, padx=12, pady=12)
+        self.preview_label.pack(fill="both", expand=True)
         self.preview_label.bind("<Configure>", lambda _event: self._redraw_latest())
 
     def _build_status_page(self, page: tk.Frame) -> None:
@@ -748,7 +769,7 @@ class StreamBridgeApp(tk.Tk):
             self.log_text.configure(state="disabled")
 
     def _set_status(self, text: str, color: str) -> None:
-        self.status_chip.configure(text=f"●  {self._status_label(text, color)}", fg=color)
+        self.status_chip.configure(text=f"STATUS  {self._status_label(text, color)}", fg=color)
         if hasattr(self, "home_status_text"):
             self.home_status_text.configure(text=text, fg=color)
 
@@ -777,7 +798,16 @@ class StreamBridgeApp(tk.Tk):
         image = Image.fromarray(rgb, "RGB")
         w = max(2, self.preview_label.winfo_width() - 20)
         h = max(2, self.preview_label.winfo_height() - 20)
-        image.thumbnail((w, h), Image.Resampling.LANCZOS)
+        target_ratio = 9.0 / 16.0
+        if image.width / image.height > target_ratio:
+            crop_w = int(image.height * target_ratio)
+            left = (image.width - crop_w) // 2
+            image = image.crop((left, 0, left + crop_w, image.height))
+        else:
+            crop_h = int(image.width / target_ratio)
+            top = max(0, (image.height - crop_h) // 2)
+            image = image.crop((0, top, image.width, top + crop_h))
+        image = ImageOps.fit(image, (w, h), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
         self._photo = ImageTk.PhotoImage(image)
         self.preview_label.configure(image=self._photo, text="")
 

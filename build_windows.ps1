@@ -33,6 +33,8 @@ $PyInstallerArgs = @(
     '--clean',
     '--windowed',
     '--name', 'StreamBridge',
+    '--icon', 'src\streambridge\assets\streambridge.ico',
+    '--add-data', 'src\streambridge\assets;streambridge\assets',
     '--paths', 'src',
     '--collect-all', 'imageio_ffmpeg',
     '--collect-all', 'pyvirtualcam',

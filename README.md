@@ -1,37 +1,29 @@
-# StreamBridge Windows v1.2.0
+# StreamBridge Windows v1.3.0
 
-A Windows desktop application that resolves supported public share links or accepts direct RTSP/RTSPS, HLS/M3U8, HTTP, or HTTPS streams, then sends processed video to a UnityCapture DirectShow virtual camera.
+Windows bridge for TikTok LIVE Studio: resolves supported share links or direct RTSP/HTTP/HLS sources and sends processed video to a UnityCapture DirectShow virtual camera.
 
-## What's new in v1.2.0
+## UnityCapture — official installer
 
-- **Share-link resolver:** bare `www.tiktok.com/...`, `tiktok.com/...`, and `https://vt.tiktok.com/...` inputs are normalized to HTTPS. TikTok share/live pages are resolved through the optional `yt-dlp` extractor, while direct media URLs remain the fast path.
-- **Actionable resolver diagnostics:** the app distinguishes input normalization, share-page extraction failure, and later FFmpeg/network failure. Query strings are redacted in logs.
-- **UnityCapture preflight:** the Home page can enumerate the configured UnityCapture backend without opening or modifying a camera. If no camera is registered, the app explains the fix and offers to open the official UnityCapture instructions. Driver installation remains an explicit Windows/UAC action; it is never silent.
-- **Media FX stability:** brightness, contrast, hue, playback speed, pitch, and volume continue to apply through the existing debounced live-update path. Speed/pitch changes reconfigure only the relevant decoder/relay; the camera sender continues outputting frames or the reconnect placeholder.
-- **PK overlay preparation:** an opt-in top-edge score bar can be composited into outgoing frames using score/round settings. It does not render comments or gifts and is disabled by default.
+Use the official package; the DLL files must remain beside the batch file:
 
-## Requirements and one-time setup
+- [Download UnityCapture ZIP](https://github.com/schellingb/UnityCapture/archive/refs/heads/master.zip)
+- [Official instructions](https://github.com/schellingb/UnityCapture)
+- [Install.bat source](https://raw.githubusercontent.com/schellingb/UnityCapture/master/Install/Install.bat)
 
-1. Install the **UnityCapture DirectShow filter** from the [official UnityCapture repository](https://github.com/schellingb/UnityCapture), then confirm that the expected camera name is usually `Unity Video Capture`.
-2. For optional audio pass-through, install a virtual audio cable such as [VB-Audio Virtual Cable](https://vb-audio.com/Cable/).
-3. Install runtime dependencies from `requirements.txt`; `yt-dlp` is required only when using TikTok share pages. The resolver does not bypass authentication, cookies, geo restrictions, or other access controls.
+After extracting the ZIP, open `Install\Install.bat` and choose **Run as administrator**. Then restart StreamBridge and select `Unity Video Capture`. Do not download a standalone BAT without the matching `Install` DLL files.
 
-## Use
+## v1.3.0 changes
 
-1. Start `StreamBridge.exe` and press **Check UnityCapture / Setup** if the camera is not registered.
-2. Paste a direct endpoint or a supported TikTok share/live URL. The app normalizes missing `https://` where unambiguous and resolves share pages in a background thread.
-3. Start the bridge and select **Unity Video Capture** in TikTok LIVE Studio/OBS.
-4. Use **Media FX** for live visual/audio adjustments. Preview visibility is independent of camera delivery.
+- **Mobile Viewframe:** Live Preview is now a centered portrait 9:16 phone frame. The preview uses a center crop to fill the frame without black bars; the outgoing camera resolution and media pipeline remain unchanged.
+- **Professional iconography:** navigation now uses custom cyan line SVG assets with packaged PNG runtime copies for Dashboard, Live Preview, Bridge Status, Logs, Media FX, and Settings. Emoji/unicode navigation glyphs were removed.
+- **Application icon:** `streambridge.ico` is embedded into the Windows executable and assigned to the Tk window, taskbar, and desktop shortcut generated from the EXE.
+- Existing v1.2 features remain: TikTok share-link resolver through optional `yt-dlp`, UnityCapture preflight, live Media FX, and disabled-by-default top-only PK score bar.
 
-## Build and tests
-
-Use Windows 10/11 x64 with Python 3.11 x64 and Tcl/Tk:
+## Build and validation
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
 .\build_windows.ps1 -Mode onefile
 ```
 
-The build runs the unit suite and creates `dist\StreamBridge.exe`. The GitHub Actions workflow uploads the EXE as a short-retention artifact; binaries are not committed to Git.
-
-The tests cover direct/share URL classification, deterministic direct resolution, FFmpeg command construction, visual/audio processing, PK top-only composition, camera-output independence, and decoder reconfiguration. Real TikTok availability, UnityCapture registration, VB-CABLE routing, and Windows hardware behavior still require validation on an authorized target PC.
+The build packages the icon assets and runs the automated test suite before PyInstaller. The CI artifact is produced by the Windows x64 workflow. Hardware validation still requires UnityCapture installed on a real Windows PC.

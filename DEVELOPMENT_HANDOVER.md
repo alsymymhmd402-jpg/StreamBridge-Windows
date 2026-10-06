@@ -221,3 +221,9 @@ The continuation work adds a resolver in `src/streambridge/resolver.py` for HTTP
 `apply_pk_overlay()` and engine settings provide a disabled-by-default, top-edge-only score bar. Comments and gifts are not accepted as inputs or rendered. Additional unit coverage verifies URL normalization/classification, deterministic direct resolution, and top-only PK composition.
 
 The v1.2.0 CI artifact remains a Windows build and must be validated on a real authorized Windows machine with UnityCapture installed, TikTok LIVE Studio/OBS device enumeration, and representative public links. A successful unit test or CI build is not proof of hardware-driver interoperability or current TikTok availability.
+
+## 13. v1.3.0 UI and installer addendum (2026-10-06)
+
+The UI now presents a fixed portrait 9:16 mobile viewframe and center-crops preview content to fill it without black bars. This transformation is preview-only; the outgoing UnityCapture frame dimensions and decoder path are unchanged.
+
+Navigation uses custom SVG icon sources with packaged PNG runtime assets. A multi-size `streambridge.ico` is passed to PyInstaller and assigned to the Tk window. The official UnityCapture repository, ZIP package, and Install.bat links are documented; the application never downloads or executes a driver installer automatically.
