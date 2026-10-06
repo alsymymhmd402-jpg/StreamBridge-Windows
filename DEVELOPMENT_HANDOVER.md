@@ -249,3 +249,11 @@ The supplied TikTok share URL resolved successfully in 3.1–3.5 seconds during 
 TikTok short links are first opened with a mobile Chrome User-Agent and a minimum 30-second timeout to capture the final `www.tiktok.com/@.../live` URL. yt-dlp receives the same modern headers, a TikTok Referer, and bounded retries. The preview start path requires a successfully cached extracted media URL and refuses to start FFmpeg otherwise.
 
 Mandatory live test: `https://vt.tiktok.com/ZS9DubXVgusRS-ZqqQ5/` redirected to a TikTok live page in about 2.6 seconds and produced an HTTP 200 `application/x-mpegURL` response containing `#EXTM3U` in about 15.1 seconds. Automated suite: 17 passing tests.
+
+## 18. v1.5.3 connection and preview UX addendum (2026-10-06)
+
+The default editable input is the supplied TikTok short URL. A blue `تشغيل المعاينة` action opens the preview page immediately, starts extraction in the background, and gates FFmpeg until a valid media URL is cached. Failure leaves the preview page visible with a diagnostic status and does not start the decoder.
+
+The resolver now uses a cookie-preserving HTTP session, follows redirects, retries the preliminary request three times, enforces a 30-second minimum socket timeout, and supplies mobile Chrome headers plus TikTok Referer. The Windows build includes `streambridge.manifest` with `requireAdministrator` for UnityCapture/device access.
+
+Live test result for `https://vt.tiktok.com/ZS9DunAhNDa9x-XGD5c/`: redirect succeeded in 2.41 seconds; returned M3U8 responded HTTP 200 in 15.72 seconds with `application/x-mpegURL`, `#EXTM3U`, and 656 bytes sampled. Automated tests: 17 passing.

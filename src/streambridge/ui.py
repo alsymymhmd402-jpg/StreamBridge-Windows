@@ -23,11 +23,11 @@ BG="#080B12"; SIDEBAR="#0C111B"; PANEL="#111927"; TEXT="#F4F7FB"; MUTED="#91A0B5
 class StreamBridgeApp(tk.Tk):
     def __init__(self, initial_url: str = "") -> None:
         super().__init__()
-        self.title("StreamBridge 1.5.2 — كاميرا بث افتراضية")
+        self.title("StreamBridge 1.5.3 — كاميرا بث افتراضية")
         try: self.iconbitmap(str(Path(__file__).resolve().parent / "assets" / "streambridge.ico"))
         except tk.TclError: pass
         self.geometry("1440x900"); self.minsize(1180,760); self.configure(bg=BG)
-        self.worker: StreamBridgeEngine|None=None; self._photo=None; self._last_display_frame=None; self._extracted_media_url=""; self._extracted_input_url=""
+        self.worker: StreamBridgeEngine|None=None; self._photo=None; self._last_display_frame=None; self._extracted_media_url=""; self._extracted_input_url=""; self._preview_requested=False
         self._closing=False; self._resolving=False; self._last_error=False; self._adjustment_after=None
         self._icons={}; self._pages={}; self._nav={}; self._log_lines=[]
         self.preview_var=tk.BooleanVar(value=True); self.url_var=tk.StringVar(value=initial_url)
@@ -80,7 +80,7 @@ class StreamBridgeApp(tk.Tk):
         self._title(page,"الرئيسية","أدخل رابط TikTok أو رابط بث مباشر ثم استخرج الرابط وشاهد حالة الاتصال.")
         card=self._card(page); card.pack(fill="x",pady=(0,14)); tk.Label(card,text="رابط البث",bg=PANEL,fg=CYAN,font=("Segoe UI",11,"bold"),anchor="e").pack(fill="x",padx=18,pady=(16,5)); tk.Label(card,text="رابط مشاركة TikTok أو رابط M3U8 / RTSP / HTTP مباشر",bg=PANEL,fg=MUTED,font=("Segoe UI",9),anchor="e").pack(fill="x",padx=18,pady=(0,9))
         row=tk.Frame(card,bg=PANEL); row.pack(fill="x",padx=18,pady=(0,12)); row.grid_columnconfigure(0,weight=1); self.url_entry=tk.Entry(row,textvariable=self.url_var,justify="right",bg="#080E19",fg=TEXT,insertbackground=CYAN,relief="flat",font=("Segoe UI",11),highlightthickness=1,highlightbackground="#273449",highlightcolor=CYAN); self.url_entry.grid(row=0,column=0,sticky="ew",ipady=12); tk.Button(row,text="لصق",command=self._paste, bg="#193040",fg=CYAN,relief="flat",bd=0,padx=16,pady=11,font=("Segoe UI",9,"bold")).grid(row=0,column=1,padx=(8,0))
-        actions=tk.Frame(card,bg=PANEL); actions.pack(fill="x",padx=18,pady=(0,15)); tk.Button(actions,text="استخراج الرابط",command=self._extract_only,bg=PINK,fg="white",relief="flat",bd=0,padx=20,pady=11,font=("Segoe UI",10,"bold")).pack(side="right"); self.home_status=tk.Label(actions,text="جاهز · لم يبدأ الاتصال",bg=PANEL,fg=MUTED,font=("Segoe UI",9),anchor="e"); self.home_status.pack(side="right",padx=15)
+        actions=tk.Frame(card,bg=PANEL); actions.pack(fill="x",padx=18,pady=(0,15)); tk.Button(actions,text="تشغيل المعاينة",command=self._preview_action,bg="#1677FF",fg="white",activebackground="#0B5ED7",relief="flat",bd=0,padx=20,pady=11,font=("Segoe UI",10,"bold")).pack(side="right",padx=(8,0)); tk.Button(actions,text="استخراج الرابط",command=self._extract_only,bg=PINK,fg="white",relief="flat",bd=0,padx=20,pady=11,font=("Segoe UI",10,"bold")).pack(side="right"); self.home_status=tk.Label(actions,text="جاهز · لم يبدأ الاتصال",bg=PANEL,fg=MUTED,font=("Segoe UI",9),anchor="e"); self.home_status.pack(side="right",padx=15)
         info=self._card(page); info.pack(fill="x"); tk.Label(info,text="حالة الاتصال المباشر",bg=PANEL,fg=CYAN,font=("Segoe UI",10,"bold"),anchor="e").pack(fill="x",padx=18,pady=(15,5)); self.home_connection=tk.Label(info,text="لم يتم استخراج أو اختبار الرابط بعد",bg=PANEL,fg=TEXT,font=("Segoe UI",10),anchor="e",justify="right"); self.home_connection.pack(fill="x",padx=18,pady=(0,16))
 
     def _build_preview(self,page):
@@ -118,6 +118,14 @@ class StreamBridgeApp(tk.Tk):
         try: self.url_entry.delete(0,tk.END); self.url_entry.insert(0,self.clipboard_get().strip()); self._set_status("تم لصق الرابط",CYAN)
         except tk.TclError: self._set_status("الحافظة لا تحتوي على نص",YELLOW)
 
+    def _preview_action(self):
+        self._show_page("preview")
+        if self._extracted_media_url and self.url_var.get().strip() == self._extracted_input_url:
+            self._toggle_stream()
+        else:
+            self._preview_requested=True
+            self._extract_only()
+
     def _extract_only(self):
         if self._resolving:return
         try: value=normalize_input_url(self.url_var.get())
@@ -130,7 +138,7 @@ class StreamBridgeApp(tk.Tk):
         self.after(0,lambda:self._extract_done(result.media_url,result.source_kind))
 
     def _extract_error(self,msg): self._resolving=False; self._set_busy(False); self.home_status.configure(text="فشل الاستخراج",fg=RED); self.home_connection.configure(text=msg,fg=RED); self._append_log("خطأ الاستخراج",msg)
-    def _extract_done(self,url,kind): self._resolving=False; self._set_busy(False); self._extracted_media_url=url; self.url_var.set(url); self._extracted_input_url=url; self.home_status.configure(text="تم استخراج الرابط",fg=GREEN); self.home_connection.configure(text="رابط M3U8/RTSP جاهز · انتقل إلى المعاينة لتشغيله",fg=GREEN); self._append_log("المصدر","تم استخراج رابط مباشر" if kind!="direct" else "الرابط المباشر جاهز")
+    def _extract_done(self,url,kind): self._resolving=False; self._set_busy(False); self._extracted_media_url=url; self.url_var.set(url); self._extracted_input_url=url; self.home_status.configure(text="تم استخراج الرابط",fg=GREEN); self.home_connection.configure(text="رابط M3U8/RTSP جاهز · انتقل إلى المعاينة لتشغيله",fg=GREEN); self._append_log("المصدر","تم استخراج رابط مباشر" if kind!="direct" else "الرابط المباشر جاهز"); self.after(0,self._toggle_stream) if self._preview_requested else None; self._preview_requested=False
 
     def _get_adjustments(self):
         fps=60 if self.fps_var.get().startswith("60") else 30; width,height=(1920,1080) if self.resolution_var.get().startswith("1080") else (1280,720)

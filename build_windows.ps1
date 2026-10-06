@@ -34,6 +34,7 @@ $PyInstallerArgs = @(
     '--windowed',
     '--name', 'StreamBridge',
     '--icon', 'src\streambridge\assets\streambridge.ico',
+    '--manifest', 'streambridge.manifest',
     '--add-data', 'src\streambridge\assets;streambridge\assets',
     '--paths', 'src',
     '--collect-all', 'imageio_ffmpeg',

@@ -4,7 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
-from urllib.request import Request, build_opener
+from http.cookiejar import CookieJar
+from urllib.request import HTTPCookieProcessor, HTTPRedirectHandler, Request, build_opener
 
 from .core import InvalidStreamUrl, SUPPORTED_SCHEMES
 
@@ -50,6 +51,11 @@ def classify_input_url(value: str) -> str:
     return "direct"
 
 
+def _build_http_session():
+    """Create a cookie-preserving redirect-following HTTP session."""
+    return build_opener(HTTPCookieProcessor(CookieJar()), HTTPRedirectHandler())
+
+
 def _resolve_redirect_url(url: str, timeout: float) -> str:
     """Follow TikTok short-link redirects before invoking the extractor."""
     request = Request(
@@ -61,12 +67,18 @@ def _resolve_redirect_url(url: str, timeout: float) -> str:
             "Cache-Control": "no-cache",
         },
     )
-    try:
-        with build_opener().open(request, timeout=timeout) as response:
-            return response.geturl() or url
-    except (HTTPError, URLError, TimeoutError, OSError):
-        # yt-dlp can sometimes resolve a link that rejects a preliminary HTTP request.
-        return url
+    session = _build_http_session()
+    last_error = None
+    for attempt in range(3):
+        try:
+            with session.open(request, timeout=timeout) as response:
+                return response.geturl() or url
+        except (HTTPError, URLError, TimeoutError, OSError) as exc:
+            last_error = exc
+            if attempt < 2:
+                continue
+    # yt-dlp can sometimes resolve a link that rejects a preliminary HTTP request.
+    return url
 
 
 def _build_yt_dlp_options(timeout: float) -> dict:

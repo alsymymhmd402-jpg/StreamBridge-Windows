@@ -7,10 +7,11 @@ import tkinter as tk
 
 from .ui import StreamBridgeApp
 
+DEFAULT_TEST_URL = "https://vt.tiktok.com/ZS9DunAhNDa9x-XGD5c/"
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Stream a direct URL into a Windows DirectShow virtual camera.")
-    parser.add_argument("url", nargs="?", default="", help="Optional RTSP/HLS/HTTP stream URL to prefill")
+    parser.add_argument("url", nargs="?", default=DEFAULT_TEST_URL, help="Optional RTSP/HLS/HTTP stream URL to prefill")
     args = parser.parse_args()
     try:
         app = StreamBridgeApp(initial_url=args.url)

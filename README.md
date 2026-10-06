@@ -1,4 +1,4 @@
-# StreamBridge Windows v1.5.2
+# StreamBridge Windows v1.5.3
 
 تطبيق Windows عربي RTL لبث TikTok وRTSP/HLS إلى كاميرا UnityCapture المتوافقة مع TikTok LIVE Studio.
 
@@ -15,6 +15,8 @@
 استخراج رابط المشاركة وفحص UnityCapture يعملان في خيوط خلفية مع مؤشر تحميل. يبدأ التطبيق باستخراج الرابط أولًا ثم يفحص الكاميرا، ويعرض أخطاء FFmpeg بدل تجميد الواجهة أو إخفاء سبب الفشل.
 
 يتم الآن تتبع روابط `vt.tiktok.com` و`vm.tiktok.com` أولًا، مع مهلة لا تقل عن 30 ثانية، وUser-Agent حديث وترويسات Referer، ومحاولات إعادة محدودة. لا يبدأ زر تشغيل المعاينة FFmpeg إلا بعد نجاح استخراج رابط M3U8/RTSP.
+
+يفتح التطبيق افتراضيًا بالرابط الاختباري القابل للتحرير `https://vt.tiktok.com/ZS9DunAhNDa9x-XGD5c/`. زر **تشغيل المعاينة** أزرق مستقل؛ يعرض صفحة المعاينة فورًا، لكنه لا يبدأ FFmpeg إلا بعد نجاح الاستخراج. يتضمن EXE طلب Administrator عبر Windows manifest لفحص UnityCapture.
 
 ## UnityCapture
 
