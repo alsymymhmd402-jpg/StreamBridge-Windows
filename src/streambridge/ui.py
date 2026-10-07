@@ -12,6 +12,7 @@ import numpy as np
 from PIL import Image, ImageOps, ImageTk
 
 from .audio import list_output_devices
+from .adb_bridge import AdbBridgeError, AdbBridgeManager, HLS_URL, RTSP_URL
 from .camera_check import UNITYCAPTURE_URL, check_unitycapture
 from .core import InvalidStreamUrl, validate_stream_url
 from .engine import DEFAULT_SETTINGS, StreamBridgeEngine, StreamPreviewEngine
@@ -30,10 +31,11 @@ class StreamBridgeApp(tk.Tk):
         self.geometry("1440x900"); self.minsize(1180,760); self.configure(bg=BG)
         self.worker: StreamBridgeEngine|None=None; self.preview_worker: StreamPreviewEngine|None=None; self.relay: LocalHlsRelay|None=None; self._photo=None; self._last_display_frame=None; self._extracted_media_url=""; self._extracted_input_url=""; self._preview_requested=False
         self._closing=False; self._resolving=False; self._last_error=False; self._adjustment_after=None
+        self.adb_manager=AdbBridgeManager(); self._usb_monitor_stop=threading.Event(); self._usb_connecting=False; self._usb_monitor_running=False
         self._icons={}; self._pages={}; self._nav={}; self._log_lines=[]
         self.preview_var=tk.BooleanVar(value=True); self.url_var=tk.StringVar(value=initial_url)
         self.resolution_var=tk.StringVar(value="720p · 1280 × 720"); self.fps_var=tk.StringVar(value="30 FPS")
-        self.camera_name_var=tk.StringVar(value="Unity Video Capture"); self.audio_device_var=tk.StringVar(value="")
+        self.camera_name_var=tk.StringVar(value="Unity Video Capture"); self.audio_device_var=tk.StringVar(value=""); self.usb_transport_var=tk.StringVar(value="HLS · 8555 (موصى به)")
         self.audio_devices={}; self.visual_enabled_var=tk.BooleanVar(value=False); self.speed_enabled_var=tk.BooleanVar(value=False); self.audio_enabled_var=tk.BooleanVar(value=False)
         self.brightness_var=tk.DoubleVar(value=0); self.contrast_var=tk.DoubleVar(value=100); self.hue_var=tk.DoubleVar(value=0); self.speed_var=tk.DoubleVar(value=1.0); self.pitch_var=tk.DoubleVar(value=1.0); self.volume_var=tk.DoubleVar(value=80)
         self._last_metrics={"fps":0.0,"frames":0,"signal":"انتظار","resolution":"1280×720","target_fps":30}
@@ -83,6 +85,84 @@ class StreamBridgeApp(tk.Tk):
         row=tk.Frame(card,bg=PANEL); row.pack(fill="x",padx=18,pady=(0,12)); row.grid_columnconfigure(0,weight=1); self.url_entry=tk.Entry(row,textvariable=self.url_var,justify="right",bg="#080E19",fg=TEXT,insertbackground=CYAN,relief="flat",font=("Segoe UI",11),highlightthickness=1,highlightbackground="#273449",highlightcolor=CYAN); self.url_entry.grid(row=0,column=0,sticky="ew",ipady=12); tk.Button(row,text="لصق",command=self._paste, bg="#193040",fg=CYAN,relief="flat",bd=0,padx=16,pady=11,font=("Segoe UI",9,"bold")).grid(row=0,column=1,padx=(8,0))
         actions=tk.Frame(card,bg=PANEL); actions.pack(fill="x",padx=18,pady=(0,15)); tk.Button(actions,text="تشغيل المعاينة",command=self._preview_action,bg="#1677FF",fg="white",activebackground="#0B5ED7",relief="flat",bd=0,padx=20,pady=11,font=("Segoe UI",10,"bold")).pack(side="right",padx=(8,0)); tk.Button(actions,text="استخراج الرابط",command=self._extract_only,bg=PINK,fg="white",relief="flat",bd=0,padx=20,pady=11,font=("Segoe UI",10,"bold")).pack(side="right"); self.home_status=tk.Label(actions,text="جاهز · لم يبدأ الاتصال",bg=PANEL,fg=MUTED,font=("Segoe UI",9),anchor="e"); self.home_status.pack(side="right",padx=15)
         info=self._card(page); info.pack(fill="x"); tk.Label(info,text="حالة الاتصال المباشر",bg=PANEL,fg=CYAN,font=("Segoe UI",10,"bold"),anchor="e").pack(fill="x",padx=18,pady=(15,5)); self.home_connection=tk.Label(info,text="لم يتم استخراج أو اختبار الرابط بعد",bg=PANEL,fg=TEXT,font=("Segoe UI",10),anchor="e",justify="right"); self.home_connection.pack(fill="x",padx=18,pady=(0,16))
+        usb=self._card(page); usb.pack(fill="x",pady=(12,0)); tk.Label(usb,text="بوابة USB / ADB الحقيقية",bg=PANEL,fg=CYAN,font=("Segoe UI",11,"bold"),anchor="e").pack(fill="x",padx=18,pady=(14,4)); tk.Label(usb,text="نفق HLS وRTSP من خدمة Android عبر USB؛ لا يستخدم تصوير الشاشة أو التقاطها.",bg=PANEL,fg=MUTED,font=("Segoe UI",9),anchor="e").pack(fill="x",padx=18,pady=(0,8)); self.usb_transport_box=ttk.Combobox(usb,textvariable=self.usb_transport_var,values=("HLS · 8555 (موصى به)","RTSP · 8554"),state="readonly",width=28); self.usb_transport_box.pack(anchor="e",padx=18,pady=(0,8)); self.usb_transport_box.bind("<<ComboboxSelected>>",self._select_usb_transport); usb_actions=tk.Frame(usb,bg=PANEL); usb_actions.pack(fill="x",padx=18,pady=(0,14)); self.usb_connect_button=tk.Button(usb_actions,text="اتصال عبر USB",command=self._connect_usb,bg="#1677FF",fg="white",relief="flat",bd=0,padx=18,pady=9,font=("Segoe UI",9,"bold")); self.usb_connect_button.pack(side="right",padx=(8,0)); self.usb_disconnect_button=tk.Button(usb_actions,text="قطع USB",command=self._disconnect_usb,state="disabled",bg="#334155",fg=TEXT,relief="flat",bd=0,padx=15,pady=9,font=("Segoe UI",9,"bold")); self.usb_disconnect_button.pack(side="right"); self.usb_status=tk.Label(usb_actions,text="بانتظار الهاتف · 8554 RTSP / 8555 HLS",bg=PANEL,fg=MUTED,font=("Segoe UI",9),anchor="e"); self.usb_status.pack(side="left",fill="x",expand=True,padx=12)
+
+    def _selected_usb_url(self):
+        return RTSP_URL if self.usb_transport_var.get().startswith("RTSP") else HLS_URL
+
+    def _select_usb_transport(self,_event=None):
+        if self.adb_manager.connected:
+            url=self._selected_usb_url(); self.url_var.set(url); self._extracted_media_url=url; self._extracted_input_url=url
+            self.home_connection.configure(text=f"المصدر عبر ADB محدد: {url} · إذا كان البث يعمل فأوقف محرك الكاميرا ثم ابدأه لتطبيق التغيير",fg=CYAN)
+            self._append_log("USB/ADB",f"اختير مصدر Android: {url}")
+
+    def _connect_usb(self):
+        if self._usb_connecting or self.adb_manager.connected:
+            return
+        self._usb_connecting=True; self.usb_connect_button.configure(state="disabled",text="جارٍ الاتصال…"); self.usb_status.configure(text="جارٍ اكتشاف الهاتف وفحص ADB…",fg=YELLOW)
+        threading.Thread(target=self._connect_usb_worker,name="AdbUsbConnect",daemon=True).start()
+
+    def _connect_usb_worker(self):
+        try:
+            status=self.adb_manager.connect()
+        except Exception as exc:
+            if not self._closing:self.after(0,lambda message=str(exc):self._usb_connect_failed(message))
+            return
+        if self._closing:
+            self.adb_manager.disconnect(); return
+        self.after(0,lambda:self._usb_connected(status))
+
+    def _usb_connected(self,status):
+        if self._closing:
+            self.adb_manager.disconnect(); return
+        self._usb_connecting=False; self.usb_connect_button.configure(state="disabled",text="USB متصل"); self.usb_disconnect_button.configure(state="normal"); self.usb_status.configure(text=status,fg=GREEN)
+        selected_url=self._selected_usb_url(); self.url_var.set(selected_url); self._extracted_media_url=selected_url; self._extracted_input_url=selected_url
+        self.home_connection.configure(text="فحص /health عبر ADB ناجح. اضغط «بدء البث» لإرسال إطارات المصدر إلى UnityCapture؛ المعاينة منفصلة.",fg=GREEN)
+        self._set_status("بوابة USB جاهزة · HLS 8555 / RTSP 8554",GREEN); self._append_log("USB/ADB",status); self._append_log("USB/ADB",f"مصدر Android المحدد: {selected_url}")
+        if not self._usb_monitor_running:
+            self._usb_monitor_stop.clear(); self._usb_monitor_running=True; threading.Thread(target=self._monitor_usb,name="AdbUsbMonitor",daemon=True).start()
+
+    def _usb_connect_failed(self,message):
+        self._usb_connecting=False; self.usb_connect_button.configure(state="normal",text="إعادة الاتصال عبر USB"); self.usb_status.configure(text=message,fg=RED); self._set_status("تعذر اتصال USB",RED); self._append_log("USB/ADB",message)
+
+    def _disconnect_usb(self):
+        self._usb_monitor_stop.set()
+        try:self.adb_manager.disconnect()
+        except AdbBridgeError as exc:self._append_log("USB/ADB",str(exc))
+        self.usb_connect_button.configure(state="normal",text="اتصال عبر USB"); self.usb_disconnect_button.configure(state="disabled"); self.usb_status.configure(text="تم قطع تحويلات ADB التي أنشأها التطبيق فقط",fg=MUTED); self._set_status("انقطع USB · إخراج الكاميرا لا يتوقف تلقائيًا",YELLOW); self._append_log("USB/ADB","أوقف المستخدم النفق؛ لم نوقف محرك الكاميرا، وسيعرض Signal Lost حتى عودة الإطارات")
+
+    def _monitor_usb(self):
+        backoff=1.0
+        while not self._usb_monitor_stop.wait(2.0) and not self._closing:
+            try:
+                if self.adb_manager.verify():
+                    backoff=1.0
+                    continue
+            except Exception:
+                pass
+            self.after(0,self._usb_connection_lost)
+            while not self._usb_monitor_stop.is_set() and not self._closing:
+                if self._usb_monitor_stop.wait(backoff):
+                    self._usb_monitor_running=False
+                    return
+                try:
+                    message=self.adb_manager.connect()
+                    if self._usb_monitor_stop.is_set():
+                        self.adb_manager.disconnect()
+                        self._usb_monitor_running=False
+                        return
+                    self.after(0,lambda m=message:self._usb_connected(m))
+                    break
+                except Exception as exc:
+                    message=str(exc)
+                    if not self._usb_monitor_stop.is_set() and not self._closing:
+                        self.after(0,lambda m=message:self.usb_status.configure(text=f"إعادة المحاولة تلقائيًا: {m}",fg=YELLOW))
+                    backoff=min(backoff*2,15.0)
+        self._usb_monitor_running=False
+
+    def _usb_connection_lost(self):
+        if self._closing:return
+        self.usb_connect_button.configure(state="disabled",text="إعادة الاتصال تلقائيًا…"); self.usb_status.configure(text="انقطع كابل USB/ADB؛ نحاول استعادة النفق. ستظهر Signal Lost حتى عودة الإطارات.",fg=YELLOW); self._set_status("USB مفصول · جارٍ الاسترداد",YELLOW); self._append_log("USB/ADB","انقطع الهاتف أو النفق؛ ستُعاد المحاولة دون إزالة تحويلات أخرى")
 
     def _build_preview(self,page):
         self._title(page,"المعاينة والمؤثرات","صفحة التحكم الوحيدة التي تجمع أدوات Media FX مع معاينة الهاتف.")
@@ -170,9 +250,12 @@ class StreamBridgeApp(tk.Tk):
         if self.preview_worker and self.preview_worker.is_alive(): return
         try: url=validate_stream_url(url)
         except InvalidStreamUrl as exc: self._set_status(str(exc),RED); return
-        if self.relay and self.relay.is_running():
+        if url.lower().startswith(("rtsp://", "rtsps://")):
+            self._launch_preview(url)
+        elif self.relay and self.relay.is_running() and self.relay.source_url == url:
             self._launch_preview(self.relay.url)
         else:
+            if self.relay and self.relay.is_running(): self.relay.stop(); self.relay=None
             self._set_busy(True); self._set_status("جارٍ تشغيل HLS Relay المحلي…",YELLOW); self._start_relay_async(url, self._launch_preview)
 
     def _launch_preview(self,local_url):
@@ -200,9 +283,12 @@ class StreamBridgeApp(tk.Tk):
             check=check_unitycapture(self.camera_name_var.get().strip() or DEFAULT_SETTINGS["camera_device"])
             if not check.available:raise RuntimeError(f"الكاميرا الوهمية غير متصلة: {check.message}")
         except Exception as exc:self.after(0,lambda:self._prepare_error(str(exc)));return
-        if self.relay and self.relay.is_running():
+        if result.media_url.lower().startswith(("rtsp://", "rtsps://")):
+            self.after(0,lambda url=result.media_url:self._start_camera_resolved(url))
+        elif self.relay and self.relay.is_running() and self.relay.source_url == result.media_url:
             self.after(0,lambda:self._start_camera_resolved(self.relay.url))
         else:
+            if self.relay and self.relay.is_running(): self.relay.stop(); self.relay=None
             self._start_relay_async(result.media_url, self._start_camera_resolved)
     def _prepare_error(self,msg):
         self._resolving=False; self._set_busy(False); self.start_button.configure(state="normal",text="بدء البث"); self._set_status("تعذر بدء البث",RED); self._append_log("خطأ",msg); self.camera_indicator.configure(text="الكاميرا غير متصلة",fg=RED); messagebox.showerror("تعذر بدء البث",msg,parent=self)
@@ -275,6 +361,10 @@ class StreamBridgeApp(tk.Tk):
 
     def _set_status(self,text,color):self.status_chip.configure(text=f"الحالة  {text}",fg=color); self.home_status.configure(text=text,fg=color) if hasattr(self,"home_status") else None
     def _on_close(self):
+        self._closing=True
+        self._usb_monitor_stop.set()
+        try:self.adb_manager.disconnect()
+        except AdbBridgeError as exc:self._append_log("USB/ADB",str(exc))
         if self.worker and self.worker.is_alive():self._closing=True;self.worker.request_stop()
         if self.preview_worker and self.preview_worker.is_alive():self._closing=True;self.preview_worker.request_stop()
         if self.relay:self.relay.stop(); self.relay=None
